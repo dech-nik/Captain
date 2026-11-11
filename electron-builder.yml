@@ -1,0 +1,50 @@
+appId: io.captain.desktop
+productName: Captain
+directories:
+  buildResources: build
+  output: dist
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!proxy/*'
+  - '!electron.vite.config.*'
+  - '!vitest.config.*'
+  - '!tsconfig*.json'
+asarUnpack:
+  - '**/node_modules/node-pty/**/*'
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - 'k8s-proxy*'
+  - from: resources/icon.png
+    to: icon.png
+  - from: LICENSE
+    to: LICENSE
+  - from: THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
+  - from: licenses
+    to: licenses
+mac:
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - AppImage
+    - deb
+  maintainer: Captain Contributors
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+npmRebuild: true

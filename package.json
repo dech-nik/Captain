@@ -1,0 +1,39 @@
+{
+  "name": "captain",
+  "version": "1.0.0",
+  "description": "Cross-platform Kubernetes desktop workspace with native Teleport authentication",
+  "main": "./out/main/index.js",
+  "license": "0BSD",
+  "scripts": {
+    "build:proxy": "node scripts/build-proxy.cjs",
+    "dev": "npm run build:proxy && electron-vite dev",
+    "build": "npm run build:proxy && electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:go": "cd proxy && go test ./...",
+    "test:all": "npm run test:go && npm run test",
+    "postinstall": "electron-builder install-app-deps",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^3.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

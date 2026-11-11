@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" fill="none">
+  <defs>
+    <!-- Clean architectural white-to-porcelain squircle canvas -->
+    <linearGradient id="tileBg" x1="512" y1="96" x2="512" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="72%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#EEF2F8" />
+    </linearGradient>
+
+    <linearGradient id="tileBorder" x1="512" y1="96" x2="512" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+
+    <!-- Classic dark midnight-slate pirate tricorn leather/felt body -->
+    <linearGradient id="pirateBodyLeft" x1="160" y1="260" x2="512" y2="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <linearGradient id="pirateBodyRight" x1="512" y1="260" x2="864" y2="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#172033" />
+      <stop offset="100%" stop-color="#090E1A" />
+    </linearGradient>
+
+    <!-- Vibrant KEDA-cobalt Captain's plume feather & sash accent -->
+    <linearGradient id="plumeCobalt" x1="560" y1="210" x2="870" y2="450" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="50%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <linearGradient id="sashCobalt" x1="250" y1="640" x2="774" y2="690" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+
+    <filter id="tileShadow" x="-12%" y="-10%" width="124%" height="126%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0F172A" flood-opacity="0.14" />
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0F172A" flood-opacity="0.07" />
+    </filter>
+
+    <filter id="hatShadow" x="-12%" y="-10%" width="124%" height="128%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.16" />
+    </filter>
+  </defs>
+
+  <!-- macOS HIG squircle (832x832 inside 1024x1024) -->
+  <g filter="url(#tileShadow)">
+    <rect x="96" y="96" width="832" height="832" rx="188" fill="url(#tileBg)" />
+    <rect x="98" y="98" width="828" height="828" rx="186" stroke="url(#tileBorder)" stroke-width="4" />
+  </g>
+
+  <!-- Unmistakable Pirate Captain Bicorne/Tricorne Hat -->
+  <g filter="url(#hatShadow)">
+    <!-- Sweeping Cobalt Captain's Feather Plume arcing from behind the crown -->
+    <path
+      d="M 558 318
+         C 626 226 742 198 852 238
+         C 800 268 770 306 758 348
+         C 804 336 844 344 876 370
+         C 806 426 714 446 618 426
+         Z"
+      fill="url(#plumeCobalt)"
+    />
+
+    <!-- Rounded Pirate Crown Dome peeking above the upturned brim dips -->
+    <path
+      d="M 332 456
+         C 344 348 416 286 512 286
+         C 608 286 680 348 692 456
+         Z"
+      fill="#334155"
+    />
+
+    <!-- Wide Swept Pirate Hat Wing - Left Horn to High Tricorn Peak -->
+    <path
+      d="M 512 272
+         C 432 272 384 446 276 462
+         C 214 472 168 442 136 398
+         C 124 382 106 396 114 418
+         C 148 524 218 624 294 668
+         Q 403 636 512 636
+         Z"
+      fill="url(#pirateBodyLeft)"
+    />
+
+    <!-- Wide Swept Pirate Hat Wing - Right Horn to High Tricorn Peak -->
+    <path
+      d="M 512 272
+         C 592 272 640 446 748 462
+         C 810 472 856 442 888 398
+         C 900 382 918 396 910 418
+         C 876 524 806 624 730 668
+         Q 621 636 512 636
+         Z"
+      fill="url(#pirateBodyRight)"
+    />
+
+    <!-- Bold Cobalt Trim Braid along the upturned pirate wings & peak -->
+    <path
+      d="M 132 414
+         C 172 458 222 484 282 474
+         C 392 456 438 288 512 288
+         C 586 288 632 456 742 474
+         C 802 484 852 458 892 414"
+      stroke="#10B981"
+      stroke-width="18"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Pirate Captain's Cobalt Bandana / Sash Ribbon at the base (curved upward, zero visor!) -->
+    <path
+      d="M 284 662
+         Q 512 606 740 662
+         C 732 692 714 706 688 699
+         Q 512 654 336 699
+         C 310 706 292 692 284 662
+         Z"
+      fill="url(#sashCobalt)"
+    />
+    <!-- Sash knot tails fluttering on the left side like a pirate bandana -->
+    <path
+      d="M 314 686 L 252 738 L 288 746 L 336 696 Z"
+      fill="#059669"
+    />
+    <path
+      d="M 334 692 L 298 758 L 332 754 L 356 698 Z"
+      fill="#047857"
+    />
+
+    <!-- Crisp White Ship's Helm / Compass Rose Emblem on the Pirate Hat Front -->
+    <circle cx="512" cy="492" r="52" stroke="#FFFFFF" stroke-width="14" />
+    <circle cx="512" cy="492" r="16" fill="#FFFFFF" />
+    <!-- 8 Ship's Wheel Spokes -->
+    <path
+      d="M 512 414 V 440
+         M 512 544 V 570
+         M 434 492 H 460
+         M 564 492 H 590
+         M 457 437 L 475 455
+         M 549 529 L 567 547
+         M 567 437 L 549 455
+         M 475 529 L 457 547"
+      stroke="#FFFFFF"
+      stroke-width="13"
+      stroke-linecap="round"
+    />
+  </g>
+</svg>

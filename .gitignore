@@ -1,0 +1,7 @@
+node_modules/
+out/
+dist/
+resources/bin/k8s-proxy
+resources/bin/k8s-proxy.exe
+*.log
+.DS_Store
