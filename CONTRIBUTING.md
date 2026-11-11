@@ -19,13 +19,15 @@ npm run test:all   # both suites
 
 ## Branching model
 
-- `main` is the stable branch. It should build and pass tests at all times.
-- All work happens on short-lived feature branches created from `main`:
+- `main` is the stable branch. It should build and pass tests at all times, and every commit on it is release-ready.
+- `dev` is the integration branch. All feature work lands here first; `dev` is merged into `main` when a release is cut.
+- All work happens on short-lived feature branches created from `dev`:
   - `feat/<topic>` — new functionality
   - `fix/<topic>` — bug fixes
   - `docs/<topic>` — documentation only
   - `chore/<topic>` — tooling, CI, refactors
-- Open a pull request against `main` even for small changes; it keeps the history reviewable.
+- Open a pull request into `dev` even for small changes; it keeps the history reviewable.
+- Releases are cut by merging `dev` into `main` and tagging `vX.Y.Z` on `main`.
 
 ## Commit messages
 
