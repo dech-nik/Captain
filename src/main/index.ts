@@ -1,15 +1,32 @@
-import { app, dialog, ipcMain, Menu, nativeImage } from 'electron'
+import {
+  app,
+  dialog,
+  Event as ElectronEvent,
+  Input,
+  ipcMain,
+  Menu,
+  nativeImage
+} from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { buildWorkspaceViewRef } from '@shared/radar-route'
+import {
+  matchesElectronInput,
+  matchPaletteSlotInput,
+  normalizeShortcutBindings
+} from '@shared/shortcuts'
 import type {
   AppStatusState,
   BinarySettings,
   ContextSummary,
+  PalettePreferencesPatch,
   ProxyAuthRequiredEvent,
   ProxyOutboundEvent,
   SaveSettingsPayload,
   TeleportMetadata,
-  TeleportMfaMode
+  TeleportMfaMode,
+  WorkspaceOverlayMode,
+  WorkspaceViewRef
 } from '@shared/types'
 import {
   computeCaptainPreferences,
@@ -28,7 +45,8 @@ import { KubeconfigWatcher } from './kubeconfig-watcher'
 import { TshSessionManager } from './teleport/tsh-session'
 import { inspectTshStatusOnce } from './teleport/tsh-status'
 import { resolveTeleportUsername } from './teleport/teleport-user'
-import { WindowComposer } from './window'
+import { RadarLocationSnapshot, WindowComposer } from './window'
+import { WorkspaceStore } from './workspace-store'
 
 app.setName('Captain')
 
@@ -37,17 +55,23 @@ let proxyManager: ProxyManager | null = null
 let radarManager: RadarManager | null = null
 const kubeconfigWatcher = new KubeconfigWatcher()
 const tshSession = new TshSessionManager()
+const workspaceStore = new WorkspaceStore()
 
 let persistedSettings: PersistedSettings = {}
 let lastStatusUser: string | undefined
 let lastAuthRequest: ProxyAuthRequiredEvent | null = null
 let knownContexts: ContextSummary[] = []
+let workspaceOverlayMode: WorkspaceOverlayMode = 'closed'
+let latestRadarLocation: RadarLocationSnapshot = { routePath: '/', pageTitle: '' }
 let isQuitting = false
+
+const lastShortcutTriggerAt = new Map<string, number>()
 
 let appState: AppStatusState = {
   phase: 'starting',
   radarUrl: null,
   currentContext: '',
+  contexts: [],
   binaries: {
     radarPath: '',
     tshPath: '',
@@ -56,6 +80,7 @@ let appState: AppStatusState = {
     kubeconfigEnv: ''
   },
   preferences: computeCaptainPreferences({}),
+  workspace: workspaceStore.getSnapshot('closed', null),
   login: null,
   settingsOpen: false
 }
@@ -68,6 +93,26 @@ function computeBinarySettings(): BinarySettings {
     resolvedTshPath: resolveTshBinary(persistedSettings.tshPath),
     kubeconfigEnv: process.env.KUBECONFIG || '~/.kube/config'
   }
+}
+
+function computeLiveWorkspaceView(contextOverride?: string): WorkspaceViewRef | null {
+  const ctx = contextOverride ?? appState.currentContext
+  if (!ctx && knownContexts.length === 0) return null
+  const effectiveContext = ctx || knownContexts[0]?.name || ''
+  if (!effectiveContext) return null
+
+  const loc = winComposer ? winComposer.getCurrentRadarLocation() : latestRadarLocation
+  if (loc.routePath) {
+    latestRadarLocation = loc
+  }
+
+  return buildWorkspaceViewRef({
+    id: 'live-workspace-view',
+    context: effectiveContext,
+    contexts: knownContexts,
+    rawUrlOrPath: latestRadarLocation.routePath || '/',
+    pageTitle: latestRadarLocation.pageTitle
+  })
 }
 
 function contextNameKey(contexts: ContextSummary[]): string {
@@ -118,26 +163,212 @@ function shouldShowOverlay(state: AppStatusState): boolean {
   if (state.phase === 'auth_required' && state.login !== null) {
     return true
   }
+  if (state.phase === 'ready' && state.workspace.overlayMode !== 'closed') {
+    return true
+  }
   return false
 }
 
+function shouldBlurRadarBehindOverlay(state: AppStatusState): boolean {
+  if (!state.preferences.blurRadarBackdrop) return false
+  if (!state.radarUrl) return false
+  if (
+    state.phase === 'starting' ||
+    state.phase === 'missing_binaries' ||
+    state.phase === 'fatal_error'
+  ) {
+    return false
+  }
+  return shouldShowOverlay(state)
+}
+
 function publishState(patch: Partial<AppStatusState>): void {
+  const nextContext = patch.currentContext ?? appState.currentContext
+  const liveView = computeLiveWorkspaceView(nextContext)
+
   appState = {
     ...appState,
     ...patch,
+    contexts: patch.contexts ?? knownContexts,
     binaries: patch.binaries ?? computeBinarySettings(),
-    preferences: patch.preferences ?? computeCaptainPreferences(persistedSettings)
+    preferences: patch.preferences ?? computeCaptainPreferences(persistedSettings),
+    workspace:
+      patch.workspace ?? workspaceStore.getSnapshot(workspaceOverlayMode, liveView)
   }
 
   if (winComposer && !winComposer.baseWindow.isDestroyed()) {
     const visible = shouldShowOverlay(appState)
-    winComposer.setOverlayVisible(visible)
+    const blurRadar = shouldBlurRadarBehindOverlay(appState)
+    winComposer.setOverlayState(visible, blurRadar)
     winComposer.overlayView.webContents.send('launcher:state-changed', appState)
+  }
+}
+
+function guardActionDebounce(actionKey: string, cooldownMs = 90): boolean {
+  const now = Date.now()
+  const prev = lastShortcutTriggerAt.get(actionKey) ?? 0
+  if (now - prev < cooldownMs) return false
+  lastShortcutTriggerAt.set(actionKey, now)
+  return true
+}
+
+async function setOverlayModeWithSync(nextMode: WorkspaceOverlayMode): Promise<void> {
+  if (nextMode !== 'closed' && appState.phase !== 'ready') {
+    return
+  }
+
+  workspaceOverlayMode = nextMode
+  if (nextMode !== 'closed') {
+    // Query Radar's lightweight in-memory connection endpoint (<1ms, ?contexts=0) once on open
+    // so Captain always reflects the true active cluster even if switched inside Radar's UI.
+    const radarActiveCtx = await radarManager?.getActiveContext()
+    if (radarActiveCtx && radarActiveCtx !== appState.currentContext) {
+      appState.currentContext = radarActiveCtx
+    }
+  }
+
+  publishState({
+    settingsOpen: nextMode !== 'closed' ? false : appState.settingsOpen
+  })
+}
+
+function toggleSettingsOverlay(): void {
+  if (!guardActionDebounce('openSettings')) return
+  if (appState.settingsOpen) {
+    if (appState.phase !== 'missing_binaries') {
+      publishState({ settingsOpen: false })
+    }
+    return
+  }
+  workspaceOverlayMode = 'closed'
+  publishState({ settingsOpen: true })
+}
+
+function toggleWorkspaceOverlay(target: 'quick_switcher' | 'palette'): void {
+  if (!guardActionDebounce(target)) return
+  if (appState.phase !== 'ready') return
+  const next: WorkspaceOverlayMode =
+    !appState.settingsOpen && workspaceOverlayMode === target ? 'closed' : target
+  void setOverlayModeWithSync(next)
+}
+
+async function reconnectActiveCluster(): Promise<void> {
+  if (!guardActionDebounce('reconnectCluster')) return
+  proxyManager?.sendCommand({ type: 'proxy:reload' })
+  proxyManager?.sendCommand({ type: 'auth:completed', context: appState.currentContext })
+  await radarManager?.triggerConnectionRetry()
+}
+
+async function switchClusterAndRefresh(contextName: string): Promise<boolean> {
+  const clean = contextName.trim()
+  if (!clean || !radarManager) return false
+
+  workspaceOverlayMode = 'closed'
+  publishState({ currentContext: clean })
+
+  const ok = await radarManager.switchContext(clean)
+  if (ok) {
+    publishState({ currentContext: clean })
+  }
+  return ok
+}
+
+async function navigateToWorkspaceView(
+  view: WorkspaceViewRef,
+  options?: { removeFromSlot?: { paletteId: string; slotIndex: number } }
+): Promise<boolean> {
+  if (options?.removeFromSlot) {
+    workspaceStore.removeSlotView(
+      options.removeFromSlot.paletteId,
+      options.removeFromSlot.slotIndex
+    )
+  }
+
+  workspaceOverlayMode = 'closed'
+  const targetContext = view.context || appState.currentContext
+  const needsContextSwitch = Boolean(targetContext && targetContext !== appState.currentContext)
+
+  publishState({
+    currentContext: targetContext || appState.currentContext
+  })
+
+  if (needsContextSwitch && radarManager) {
+    const switched = await radarManager.switchContext(targetContext)
+    if (!switched) {
+      return false
+    }
+    // Allow Radar's SSE `context_changed` callback to finish clearing previous cluster state
+    // before pushing the target route + namespace/resource query parameters.
+    await new Promise((r) => setTimeout(r, 65))
+  }
+
+  await winComposer?.navigateRadarToPath(view.routePath || '/')
+  publishState({
+    currentContext: targetContext || appState.currentContext
+  })
+  return true
+}
+
+function handleGlobalWindowShortcut(event: ElectronEvent, input: Input): void {
+  if (input.type !== 'keyDown' || input.isAutoRepeat) return
+  const prefs = computeCaptainPreferences(persistedSettings)
+  const { shortcuts } = prefs
+
+  if (matchesElectronInput(input, shortcuts.openSettings)) {
+    event.preventDefault()
+    toggleSettingsOverlay()
+    return
+  }
+
+  if (matchesElectronInput(input, shortcuts.quickSwitcher)) {
+    if (appState.phase === 'ready') {
+      event.preventDefault()
+      toggleWorkspaceOverlay('quick_switcher')
+    }
+    return
+  }
+
+  if (matchesElectronInput(input, shortcuts.paletteMenu)) {
+    if (appState.phase === 'ready') {
+      event.preventDefault()
+      toggleWorkspaceOverlay('palette')
+    }
+    return
+  }
+
+  if (matchesElectronInput(input, shortcuts.teleportLogin)) {
+    event.preventDefault()
+    if (guardActionDebounce('teleportLogin')) {
+      triggerManualTeleportLogin()
+    }
+    return
+  }
+
+  if (matchesElectronInput(input, shortcuts.reconnectCluster)) {
+    event.preventDefault()
+    void reconnectActiveCluster()
+    return
+  }
+
+  if (prefs.enableSlotShortcuts && appState.phase === 'ready' && !appState.settingsOpen) {
+    const slotIdx = matchPaletteSlotInput(input, workspaceStore.getSlotCount())
+    if (slotIdx !== null) {
+      const slotView = workspaceStore.getActivePalette().slots[slotIdx]
+      if (slotView) {
+        event.preventDefault()
+        if (guardActionDebounce(`slot:${slotIdx}`)) {
+          void navigateToWorkspaceView(slotView)
+        }
+      }
+    }
   }
 }
 
 function setupApplicationMenu(): void {
   const isMac = process.platform === 'darwin'
+  const prefs = computeCaptainPreferences(persistedSettings)
+  const { shortcuts } = prefs
+
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -148,8 +379,8 @@ function setupApplicationMenu(): void {
               { type: 'separator' as const },
               {
                 label: 'Einstellungen…',
-                accelerator: 'CmdOrCtrl+,',
-                click: () => publishState({ settingsOpen: true })
+                accelerator: shortcuts.openSettings,
+                click: () => toggleSettingsOverlay()
               },
               { type: 'separator' as const },
               { role: 'quit' as const }
@@ -161,17 +392,30 @@ function setupApplicationMenu(): void {
       label: 'Verbindung',
       submenu: [
         {
+          label: 'Cluster-Schnellauswahl…',
+          accelerator: shortcuts.quickSwitcher,
+          click: () => toggleWorkspaceOverlay('quick_switcher')
+        },
+        {
+          label: 'Ansichts-Paletten…',
+          accelerator: shortcuts.paletteMenu,
+          click: () => toggleWorkspaceOverlay('palette')
+        },
+        { type: 'separator' as const },
+        {
           label: 'Bei Teleport anmelden…',
-          accelerator: 'CmdOrCtrl+Shift+L',
-          click: () => triggerManualTeleportLogin()
+          accelerator: shortcuts.teleportLogin,
+          click: () => {
+            if (guardActionDebounce('teleportLogin')) {
+              triggerManualTeleportLogin()
+            }
+          }
         },
         {
           label: 'Cluster-Verbindung erneuern',
-          accelerator: 'CmdOrCtrl+Shift+R',
-          click: async () => {
-            proxyManager?.sendCommand({ type: 'proxy:reload' })
-            proxyManager?.sendCommand({ type: 'auth:completed', context: appState.currentContext })
-            await radarManager?.triggerConnectionRetry()
+          accelerator: shortcuts.reconnectCluster,
+          click: () => {
+            void reconnectActiveCluster()
           }
         },
         ...(!isMac
@@ -179,8 +423,8 @@ function setupApplicationMenu(): void {
               { type: 'separator' as const },
               {
                 label: 'Einstellungen…',
-                accelerator: 'CmdOrCtrl+,',
-                click: () => publishState({ settingsOpen: true })
+                accelerator: shortcuts.openSettings,
+                click: () => toggleSettingsOverlay()
               },
               { type: 'separator' as const },
               { role: 'quit' as const }
@@ -236,6 +480,8 @@ function triggerManualTeleportLogin(): void {
     return
   }
 
+  workspaceOverlayMode = 'closed'
+
   const activeSummary =
     knownContexts.find((c) => c.name === appState.currentContext && c.teleport.isTeleport) ??
     knownContexts.find((c) => c.teleport.isTeleport)
@@ -254,6 +500,7 @@ function triggerManualTeleportLogin(): void {
 }
 
 function handleAuthRequired(evt: ProxyAuthRequiredEvent): void {
+  workspaceOverlayMode = 'closed'
   const prefs = computeCaptainPreferences(persistedSettings)
   const enrichedEvt: ProxyAuthRequiredEvent = {
     ...evt,
@@ -302,13 +549,14 @@ function handleAuthRequired(evt: ProxyAuthRequiredEvent): void {
 }
 
 async function waitForProxyContextsRefresh(timeoutMs = 1500): Promise<ContextSummary[]> {
-  if (!proxyManager) return knownContexts
+  const pm = proxyManager
+  if (!pm) return knownContexts
   return new Promise<ContextSummary[]>((resolve) => {
     let done = false
     const timer = setTimeout(() => {
       if (!done) {
         done = true
-        proxyManager?.removeListener('event', onEvt)
+        pm.removeListener('event', onEvt)
         resolve(knownContexts)
       }
     }, timeoutMs)
@@ -318,14 +566,14 @@ async function waitForProxyContextsRefresh(timeoutMs = 1500): Promise<ContextSum
         if (!done) {
           done = true
           clearTimeout(timer)
-          proxyManager?.removeListener('event', onEvt)
+          pm.removeListener('event', onEvt)
           resolve(evt.contexts)
         }
       }
     }
 
-    proxyManager.on('event', onEvt)
-    proxyManager.sendCommand({ type: 'proxy:reload' })
+    pm.on('event', onEvt)
+    pm.sendCommand({ type: 'proxy:reload' })
   })
 }
 
@@ -337,7 +585,8 @@ async function bootstrapBackend(): Promise<void> {
     publishState({
       phase: 'missing_binaries',
       binaries: bins,
-      errorMessage: 'Das Kubernetes-Backend (`radar` / `kubectl-radar`) wurde nicht im PATH gefunden.'
+      errorMessage:
+        'Das Kubernetes-Backend (`radar` / `kubectl-radar`) wurde nicht im PATH gefunden.'
     })
     return
   }
@@ -373,9 +622,11 @@ async function bootstrapBackend(): Promise<void> {
       } else if (evt.type === 'proxy:contexts_updated') {
         const previousNames = contextNameKey(knownContexts)
         knownContexts = evt.contexts
-        if (!appState.currentContext && evt.currentContext) {
-          publishState({ currentContext: evt.currentContext })
-        }
+        workspaceStore.syncContextDisplayMetadata(knownContexts)
+        publishState({
+          contexts: knownContexts,
+          currentContext: appState.currentContext || evt.currentContext
+        })
         // Reload workspace view when newly discovered clusters appear in kubeconfig
         if (
           previousNames &&
@@ -385,6 +636,10 @@ async function bootstrapBackend(): Promise<void> {
           !winComposer.radarView.webContents.isDestroyed()
         ) {
           winComposer.radarView.webContents.reload()
+        }
+      } else if (evt.type === 'proxy:active_context') {
+        if (evt.context && evt.context !== appState.currentContext) {
+          publishState({ currentContext: evt.context })
         }
       } else if (evt.type === 'proxy:diagnostic') {
         console.log(
@@ -402,6 +657,7 @@ async function bootstrapBackend(): Promise<void> {
 
     const ready = await proxyManager.start()
     knownContexts = ready.contexts
+    workspaceStore.syncContextDisplayMetadata(knownContexts)
 
     kubeconfigWatcher.start(() => {
       proxyManager?.sendCommand({ type: 'proxy:reload' })
@@ -424,6 +680,7 @@ async function bootstrapBackend(): Promise<void> {
       })
       if (synced) {
         knownContexts = await waitForProxyContextsRefresh(2000)
+        workspaceStore.syncContextDisplayMetadata(knownContexts)
       }
     }
 
@@ -457,7 +714,7 @@ async function bootstrapBackend(): Promise<void> {
           username: tshSnapshot.username
         }
       })
-      publishState({ radarUrl })
+      publishState({ radarUrl, contexts: knownContexts })
       return
     }
 
@@ -468,6 +725,7 @@ async function bootstrapBackend(): Promise<void> {
       phase: nextPhase,
       radarUrl,
       currentContext: ready.currentContext,
+      contexts: knownContexts,
       login: nextPhase === 'auth_required' ? currentLogin : appState.login
     })
   } catch (err) {
@@ -510,6 +768,8 @@ function wireTshEvents(): void {
       rememberTeleportUser(tshSession.getState()?.teleport.username)
 
       const updatedContexts = await waitForProxyContextsRefresh(2000)
+      knownContexts = updatedContexts
+      workspaceStore.syncContextDisplayMetadata(knownContexts)
       proxyManager?.sendCommand({ type: 'auth:completed', context })
 
       const prefs = computeCaptainPreferences(persistedSettings)
@@ -537,6 +797,7 @@ function wireTshEvents(): void {
           publishState({
             phase: 'ready',
             currentContext: appState.currentContext,
+            contexts: knownContexts,
             login: null
           })
         }
@@ -567,7 +828,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle('launcher:get-state', () => appState)
 
   ipcMain.handle('launcher:open-settings', () => {
+    workspaceOverlayMode = 'closed'
     publishState({ settingsOpen: true })
+  })
+
+  ipcMain.handle('launcher:set-shortcut-capture', (_evt, active: boolean) => {
+    winComposer?.setShortcutCaptureActive(Boolean(active))
   })
 
   ipcMain.handle(
@@ -703,9 +969,14 @@ function registerIpcHandlers(): void {
       mfaMode: payload.preferences?.mfaMode ?? 'auto',
       syncAllClusters: payload.preferences?.syncAllClusters ?? true,
       autoSelectTeleportCluster: payload.preferences?.autoSelectTeleportCluster ?? true,
-      showTerminalByDefault: payload.preferences?.showTerminalByDefault ?? false
+      showTerminalByDefault: payload.preferences?.showTerminalByDefault ?? false,
+      blurRadarBackdrop: payload.preferences?.blurRadarBackdrop ?? true,
+      shortcuts: normalizeShortcutBindings(payload.preferences?.shortcuts),
+      enableSlotShortcuts: payload.preferences?.enableSlotShortcuts ?? true
     }
     savePersistedSettings(app.getPath('userData'), persistedSettings)
+
+    setupApplicationMenu()
 
     const nextBins = computeBinarySettings()
     const nextPrefs = computeCaptainPreferences(persistedSettings)
@@ -772,11 +1043,138 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('launcher:close-settings', () => {
+    winComposer?.setShortcutCaptureActive(false)
     publishState({ settingsOpen: false })
   })
 
   ipcMain.handle('launcher:restart-backend', async () => {
+    workspaceOverlayMode = 'closed'
     await bootstrapBackend()
+  })
+
+  // --- Workspace Organizer: Cluster Quick-Switcher & Horizontal View Palettes ---
+
+  ipcMain.handle('workspace:set-overlay-mode', async (_evt, mode: WorkspaceOverlayMode) => {
+    await setOverlayModeWithSync(mode)
+  })
+
+  ipcMain.handle('workspace:switch-context', async (_evt, contextName: string) => {
+    return switchClusterAndRefresh(contextName)
+  })
+
+  ipcMain.handle('workspace:toggle-favorite', (_evt, contextName: string) => {
+    const res = workspaceStore.toggleFavoriteContext(contextName)
+    publishState({})
+    return res
+  })
+
+  ipcMain.handle(
+    'workspace:activate-view',
+    async (
+      _evt,
+      payload: {
+        view: WorkspaceViewRef
+        options?: { removeFromSlot?: { paletteId: string; slotIndex: number } }
+      }
+    ) => {
+      return navigateToWorkspaceView(payload.view, payload.options)
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:pin-slot',
+    (
+      _evt,
+      payload: { paletteId: string; slotIndex: number; view?: WorkspaceViewRef }
+    ) => {
+      const targetView = payload.view ?? computeLiveWorkspaceView()
+      if (!targetView) return false
+      const ok = workspaceStore.assignViewToSlot(payload.paletteId, payload.slotIndex, targetView)
+      if (ok) publishState({})
+      return ok
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:move-slot',
+    (_evt, payload: { paletteId: string; fromIndex: number; toIndex: number }) => {
+      const ok = workspaceStore.moveOrSwapSlot(
+        payload.paletteId,
+        payload.fromIndex,
+        payload.toIndex
+      )
+      if (ok) publishState({})
+      return ok
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:remove-slot',
+    (_evt, payload: { paletteId: string; slotIndex: number }) => {
+      const removed = workspaceStore.removeSlotView(payload.paletteId, payload.slotIndex)
+      if (removed) publishState({})
+      return Boolean(removed)
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:rename-slot',
+    (_evt, payload: { paletteId: string; slotIndex: number; customTitle: string }) => {
+      const ok = workspaceStore.renameSlotView(
+        payload.paletteId,
+        payload.slotIndex,
+        payload.customTitle
+      )
+      if (ok) publishState({})
+      return ok
+    }
+  )
+
+  ipcMain.handle('workspace:select-palette', (_evt, paletteId: string) => {
+    if (workspaceStore.setActivePalette(paletteId)) {
+      publishState({})
+    }
+  })
+
+  ipcMain.handle('workspace:create-palette', (_evt, name?: string) => {
+    const created = workspaceStore.createPalette(name)
+    publishState({})
+    return created
+  })
+
+  ipcMain.handle(
+    'workspace:rename-palette',
+    (_evt, payload: { paletteId: string; name: string }) => {
+      const ok = workspaceStore.renamePalette(payload.paletteId, payload.name)
+      if (ok) publishState({})
+      return ok
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:set-palette-locked',
+    (_evt, payload: { paletteId: string; locked: boolean }) => {
+      const ok = workspaceStore.setPaletteLocked(payload.paletteId, payload.locked)
+      if (ok) publishState({})
+      return ok
+    }
+  )
+
+  ipcMain.handle('workspace:clear-palette', (_evt, paletteId: string) => {
+    const ok = workspaceStore.clearPaletteSlots(paletteId)
+    if (ok) publishState({})
+    return ok
+  })
+
+  ipcMain.handle('workspace:delete-palette', (_evt, paletteId: string) => {
+    const ok = workspaceStore.deletePalette(paletteId)
+    if (ok) publishState({})
+    return ok
+  })
+
+  ipcMain.handle('workspace:update-prefs', (_evt, patch: PalettePreferencesPatch) => {
+    workspaceStore.updatePreferences(patch)
+    publishState({})
   })
 }
 
@@ -796,9 +1194,13 @@ function resolveRuntimeIconPath(): string | undefined {
 
 app.whenReady().then(async () => {
   enrichProcessEnvFromLoginShell()
-  persistedSettings = loadPersistedSettings(app.getPath('userData'))
+  const userDataPath = app.getPath('userData')
+  persistedSettings = loadPersistedSettings(userDataPath)
+  workspaceStore.load(userDataPath)
+
   appState.binaries = computeBinarySettings()
   appState.preferences = computeCaptainPreferences(persistedSettings)
+  appState.workspace = workspaceStore.getSnapshot('closed', null)
 
   const iconPath = resolveRuntimeIconPath()
   if (process.platform === 'darwin' && iconPath && app.dock) {
@@ -816,7 +1218,15 @@ app.whenReady().then(async () => {
   const preloadCjs = join(__dirname, '../preload/index.js')
   const preloadMjs = join(__dirname, '../preload/index.mjs')
   const preloadPath = existsSync(preloadCjs) ? preloadCjs : preloadMjs
-  winComposer = new WindowComposer(preloadPath, iconPath)
+  winComposer = new WindowComposer(preloadPath, iconPath, handleGlobalWindowShortcut)
+  winComposer.on('radar-location-changed', (loc: RadarLocationSnapshot) => {
+    latestRadarLocation = loc
+    // Only broadcast to renderer while overlay is open to avoid unnecessary IPC chatter
+    if (shouldShowOverlay(appState)) {
+      publishState({})
+    }
+  })
+
   await winComposer.loadOverlayUI()
 
   await bootstrapBackend()

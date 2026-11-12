@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import type { CaptainPreferences, TeleportMfaMode } from '@shared/types'
+import { normalizeShortcutBindings } from '@shared/shortcuts'
+import type { CaptainPreferences, ShortcutBindings, TeleportMfaMode } from '@shared/types'
 
 export interface PersistedSettings {
   radarPath?: string
@@ -13,6 +14,9 @@ export interface PersistedSettings {
   syncAllClusters?: boolean
   autoSelectTeleportCluster?: boolean
   showTerminalByDefault?: boolean
+  blurRadarBackdrop?: boolean
+  shortcuts?: Partial<ShortcutBindings>
+  enableSlotShortcuts?: boolean
 }
 
 const SETTINGS_FILE = 'captain-settings.json'
@@ -195,7 +199,10 @@ export function computeCaptainPreferences(settings: PersistedSettings): CaptainP
     mfaMode,
     syncAllClusters: settings.syncAllClusters ?? true,
     autoSelectTeleportCluster: settings.autoSelectTeleportCluster ?? true,
-    showTerminalByDefault: settings.showTerminalByDefault ?? false
+    showTerminalByDefault: settings.showTerminalByDefault ?? false,
+    blurRadarBackdrop: settings.blurRadarBackdrop ?? true,
+    shortcuts: normalizeShortcutBindings(settings.shortcuts),
+    enableSlotShortcuts: settings.enableSlotShortcuts ?? true
   }
 }
 

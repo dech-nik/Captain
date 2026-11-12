@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppStatusState, SaveSettingsPayload, TeleportMfaMode } from '@shared/types'
+import type {
+  AppStatusState,
+  PalettePreferencesPatch,
+  SaveSettingsPayload,
+  TeleportMfaMode,
+  WorkspaceOverlayMode,
+  WorkspacePalette,
+  WorkspaceViewRef
+} from '@shared/types'
 
 export interface LauncherBridgeApi {
   getState: () => Promise<AppStatusState>
@@ -25,6 +33,37 @@ export interface LauncherBridgeApi {
   pickBinaryFile: (title: string) => Promise<string | null>
   closeSettings: () => Promise<void>
   restartBackend: () => Promise<void>
+  setShortcutCaptureActive: (active: boolean) => Promise<void>
+
+  // Cluster Quick-Switcher & Favorites
+  setWorkspaceOverlayMode: (mode: WorkspaceOverlayMode) => Promise<void>
+  switchClusterContext: (contextName: string) => Promise<boolean>
+  toggleFavoriteContext: (contextName: string) => Promise<boolean>
+
+  // Horizontal View Palettes
+  activateWorkspaceView: (
+    view: WorkspaceViewRef,
+    options?: { removeFromSlot?: { paletteId: string; slotIndex: number } }
+  ) => Promise<boolean>
+  pinViewToSlot: (
+    paletteId: string,
+    slotIndex: number,
+    view?: WorkspaceViewRef
+  ) => Promise<boolean>
+  movePaletteSlot: (paletteId: string, fromIndex: number, toIndex: number) => Promise<boolean>
+  removePaletteSlot: (paletteId: string, slotIndex: number) => Promise<boolean>
+  renamePaletteSlot: (
+    paletteId: string,
+    slotIndex: number,
+    customTitle: string
+  ) => Promise<boolean>
+  selectPalette: (paletteId: string) => Promise<void>
+  createPalette: (name?: string) => Promise<WorkspacePalette>
+  renamePalette: (paletteId: string, name: string) => Promise<boolean>
+  setPaletteLocked: (paletteId: string, locked: boolean) => Promise<boolean>
+  clearPaletteSlots: (paletteId: string) => Promise<boolean>
+  deletePalette: (paletteId: string) => Promise<boolean>
+  updatePalettePreferences: (patch: PalettePreferencesPatch) => Promise<void>
 }
 
 const api: LauncherBridgeApi = {
@@ -56,7 +95,36 @@ const api: LauncherBridgeApi = {
   clearSavedIdentity: () => ipcRenderer.invoke('launcher:clear-saved-identity'),
   pickBinaryFile: (title: string) => ipcRenderer.invoke('launcher:pick-binary', title),
   closeSettings: () => ipcRenderer.invoke('launcher:close-settings'),
-  restartBackend: () => ipcRenderer.invoke('launcher:restart-backend')
+  restartBackend: () => ipcRenderer.invoke('launcher:restart-backend'),
+  setShortcutCaptureActive: (active: boolean) =>
+    ipcRenderer.invoke('launcher:set-shortcut-capture', active),
+
+  setWorkspaceOverlayMode: (mode: WorkspaceOverlayMode) =>
+    ipcRenderer.invoke('workspace:set-overlay-mode', mode),
+  switchClusterContext: (contextName: string) =>
+    ipcRenderer.invoke('workspace:switch-context', contextName),
+  toggleFavoriteContext: (contextName: string) =>
+    ipcRenderer.invoke('workspace:toggle-favorite', contextName),
+
+  activateWorkspaceView: (view, options) =>
+    ipcRenderer.invoke('workspace:activate-view', { view, options }),
+  pinViewToSlot: (paletteId, slotIndex, view) =>
+    ipcRenderer.invoke('workspace:pin-slot', { paletteId, slotIndex, view }),
+  movePaletteSlot: (paletteId, fromIndex, toIndex) =>
+    ipcRenderer.invoke('workspace:move-slot', { paletteId, fromIndex, toIndex }),
+  removePaletteSlot: (paletteId, slotIndex) =>
+    ipcRenderer.invoke('workspace:remove-slot', { paletteId, slotIndex }),
+  renamePaletteSlot: (paletteId, slotIndex, customTitle) =>
+    ipcRenderer.invoke('workspace:rename-slot', { paletteId, slotIndex, customTitle }),
+  selectPalette: (paletteId) => ipcRenderer.invoke('workspace:select-palette', paletteId),
+  createPalette: (name) => ipcRenderer.invoke('workspace:create-palette', name),
+  renamePalette: (paletteId, name) =>
+    ipcRenderer.invoke('workspace:rename-palette', { paletteId, name }),
+  setPaletteLocked: (paletteId, locked) =>
+    ipcRenderer.invoke('workspace:set-palette-locked', { paletteId, locked }),
+  clearPaletteSlots: (paletteId) => ipcRenderer.invoke('workspace:clear-palette', paletteId),
+  deletePalette: (paletteId) => ipcRenderer.invoke('workspace:delete-palette', paletteId),
+  updatePalettePreferences: (patch) => ipcRenderer.invoke('workspace:update-prefs', patch)
 }
 
 contextBridge.exposeInMainWorld('launcherApi', api)

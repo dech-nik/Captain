@@ -87,6 +87,31 @@ export class RadarManager extends EventEmitter {
   }
 
   /**
+   * Reads Radar's authoritative active context from its lightweight in-memory connection endpoint
+   * (`?contexts=0` skips disk kubeconfig enumeration inside Radar). Called only on discrete user
+   * actions — never polled in a background loop.
+   */
+  public async getActiveContext(): Promise<string | null> {
+    const baseUrl = this.getBaseUrl()
+    if (!baseUrl) return null
+
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 450)
+      const res = await fetch(`${baseUrl}/api/connection?contexts=0`, {
+        method: 'GET',
+        signal: controller.signal
+      })
+      clearTimeout(timeout)
+      if (!res.ok) return null
+      const body = (await res.json()) as { context?: unknown }
+      return typeof body?.context === 'string' && body.context.trim() ? body.context.trim() : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * Switches Radar's active Kubernetes context (e.g. after `tsh kube login --all` adds Teleport
    * clusters to a kubeconfig that previously only had a stopped local kind/minikube context).
    */
