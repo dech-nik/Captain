@@ -19,7 +19,6 @@ import type {
   AppStatusState,
   BinarySettings,
   ContextSummary,
-  PalettePreferencesPatch,
   ProxyAuthRequiredEvent,
   ProxyOutboundEvent,
   SaveSettingsPayload,
@@ -219,8 +218,6 @@ async function setOverlayModeWithSync(nextMode: WorkspaceOverlayMode): Promise<v
 
   workspaceOverlayMode = nextMode
   if (nextMode !== 'closed') {
-    // Query Radar's lightweight in-memory connection endpoint (<1ms, ?contexts=0) once on open
-    // so Captain always reflects the true active cluster even if switched inside Radar's UI.
     const radarActiveCtx = await radarManager?.getActiveContext()
     if (radarActiveCtx && radarActiveCtx !== appState.currentContext) {
       appState.currentContext = radarActiveCtx
@@ -244,11 +241,11 @@ function toggleSettingsOverlay(): void {
   publishState({ settingsOpen: true })
 }
 
-function toggleWorkspaceOverlay(target: 'quick_switcher' | 'palette'): void {
-  if (!guardActionDebounce(target)) return
+function togglePaletteOverlay(): void {
+  if (!guardActionDebounce('palette')) return
   if (appState.phase !== 'ready') return
   const next: WorkspaceOverlayMode =
-    !appState.settingsOpen && workspaceOverlayMode === target ? 'closed' : target
+    !appState.settingsOpen && workspaceOverlayMode === 'palette' ? 'closed' : 'palette'
   void setOverlayModeWithSync(next)
 }
 
@@ -257,20 +254,6 @@ async function reconnectActiveCluster(): Promise<void> {
   proxyManager?.sendCommand({ type: 'proxy:reload' })
   proxyManager?.sendCommand({ type: 'auth:completed', context: appState.currentContext })
   await radarManager?.triggerConnectionRetry()
-}
-
-async function switchClusterAndRefresh(contextName: string): Promise<boolean> {
-  const clean = contextName.trim()
-  if (!clean || !radarManager) return false
-
-  workspaceOverlayMode = 'closed'
-  publishState({ currentContext: clean })
-
-  const ok = await radarManager.switchContext(clean)
-  if (ok) {
-    publishState({ currentContext: clean })
-  }
-  return ok
 }
 
 async function navigateToWorkspaceView(
@@ -297,8 +280,6 @@ async function navigateToWorkspaceView(
     if (!switched) {
       return false
     }
-    // Allow Radar's SSE `context_changed` callback to finish clearing previous cluster state
-    // before pushing the target route + namespace/resource query parameters.
     await new Promise((r) => setTimeout(r, 65))
   }
 
@@ -320,18 +301,10 @@ function handleGlobalWindowShortcut(event: ElectronEvent, input: Input): void {
     return
   }
 
-  if (matchesElectronInput(input, shortcuts.quickSwitcher)) {
-    if (appState.phase === 'ready') {
-      event.preventDefault()
-      toggleWorkspaceOverlay('quick_switcher')
-    }
-    return
-  }
-
   if (matchesElectronInput(input, shortcuts.paletteMenu)) {
     if (appState.phase === 'ready') {
       event.preventDefault()
-      toggleWorkspaceOverlay('palette')
+      togglePaletteOverlay()
     }
     return
   }
@@ -351,7 +324,7 @@ function handleGlobalWindowShortcut(event: ElectronEvent, input: Input): void {
   }
 
   if (prefs.enableSlotShortcuts && appState.phase === 'ready' && !appState.settingsOpen) {
-    const slotIdx = matchPaletteSlotInput(input, workspaceStore.getSlotCount())
+    const slotIdx = matchPaletteSlotInput(input)
     if (slotIdx !== null) {
       const slotView = workspaceStore.getActivePalette().slots[slotIdx]
       if (slotView) {
@@ -392,14 +365,9 @@ function setupApplicationMenu(): void {
       label: 'Verbindung',
       submenu: [
         {
-          label: 'Cluster-Schnellauswahl…',
-          accelerator: shortcuts.quickSwitcher,
-          click: () => toggleWorkspaceOverlay('quick_switcher')
-        },
-        {
           label: 'Ansichts-Paletten…',
           accelerator: shortcuts.paletteMenu,
-          click: () => toggleWorkspaceOverlay('palette')
+          click: () => togglePaletteOverlay()
         },
         { type: 'separator' as const },
         {
@@ -627,7 +595,6 @@ async function bootstrapBackend(): Promise<void> {
           contexts: knownContexts,
           currentContext: appState.currentContext || evt.currentContext
         })
-        // Reload workspace view when newly discovered clusters appear in kubeconfig
         if (
           previousNames &&
           previousNames !== contextNameKey(knownContexts) &&
@@ -663,7 +630,6 @@ async function bootstrapBackend(): Promise<void> {
       proxyManager?.sendCommand({ type: 'proxy:reload' })
     })
 
-    // Refresh accessible Teleport Kubernetes clusters on startup when a valid session exists
     const tshSnapshot = bins.resolvedTshPath
       ? await inspectTshStatusOnce(bins.resolvedTshPath)
       : null
@@ -996,8 +962,6 @@ function registerIpcHandlers(): void {
       return
     }
 
-    // If a login prompt is currently waiting and the user changed identity/proxy/MFA in Captain settings,
-    // restart the login session cleanly with the updated parameters.
     const identityChanged =
       cleanProxy !== prevProxy || cleanUser !== prevUser || nextPrefs.mfaMode !== prevMfa
     if (identityChanged && appState.phase === 'auth_required' && nextBins.resolvedTshPath) {
@@ -1052,20 +1016,10 @@ function registerIpcHandlers(): void {
     await bootstrapBackend()
   })
 
-  // --- Workspace Organizer: Cluster Quick-Switcher & Horizontal View Palettes ---
+  // --- Horizontal 5-Slot View Palettes ---
 
   ipcMain.handle('workspace:set-overlay-mode', async (_evt, mode: WorkspaceOverlayMode) => {
     await setOverlayModeWithSync(mode)
-  })
-
-  ipcMain.handle('workspace:switch-context', async (_evt, contextName: string) => {
-    return switchClusterAndRefresh(contextName)
-  })
-
-  ipcMain.handle('workspace:toggle-favorite', (_evt, contextName: string) => {
-    const res = workspaceStore.toggleFavoriteContext(contextName)
-    publishState({})
-    return res
   })
 
   ipcMain.handle(
@@ -1083,10 +1037,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'workspace:pin-slot',
-    (
-      _evt,
-      payload: { paletteId: string; slotIndex: number; view?: WorkspaceViewRef }
-    ) => {
+    (_evt, payload: { paletteId: string; slotIndex: number; view?: WorkspaceViewRef }) => {
       const targetView = payload.view ?? computeLiveWorkspaceView()
       if (!targetView) return false
       const ok = workspaceStore.assignViewToSlot(payload.paletteId, payload.slotIndex, targetView)
@@ -1171,11 +1122,6 @@ function registerIpcHandlers(): void {
     if (ok) publishState({})
     return ok
   })
-
-  ipcMain.handle('workspace:update-prefs', (_evt, patch: PalettePreferencesPatch) => {
-    workspaceStore.updatePreferences(patch)
-    publishState({})
-  })
 }
 
 async function shutdownAllProcesses(): Promise<void> {
@@ -1221,7 +1167,6 @@ app.whenReady().then(async () => {
   winComposer = new WindowComposer(preloadPath, iconPath, handleGlobalWindowShortcut)
   winComposer.on('radar-location-changed', (loc: RadarLocationSnapshot) => {
     latestRadarLocation = loc
-    // Only broadcast to renderer while overlay is open to avoid unnecessary IPC chatter
     if (shouldShowOverlay(appState)) {
       publishState({})
     }

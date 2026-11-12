@@ -1,31 +1,31 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { WorkspaceViewRef } from '@shared/types'
+import { PALETTE_SLOT_COUNT, type WorkspaceViewRef } from '@shared/types'
 import { WorkspaceStore } from './workspace-store'
 
 function makeSampleView(
   context: string,
   routePath: string,
-  kindShort: string,
-  kindName: string
+  kindName: string,
+  targetName?: string
 ): WorkspaceViewRef {
   return {
-    id: `id-${context}-${kindShort}`,
+    id: `id-${context}-${kindName}`,
     context,
     clusterLabel: context,
     isTeleport: true,
     routePath,
     category: 'workloads',
-    kindShort,
     kindName,
+    targetName,
     namespaces: ['payments'],
     createdAt: 1700000000000
   }
 }
 
-describe('WorkspaceStore persistence, locking, and horizontal slot management', () => {
+describe('WorkspaceStore 5-slot palette persistence and locking', () => {
   let tempDir: string
 
   beforeEach(() => {
@@ -36,32 +36,33 @@ describe('WorkspaceStore persistence, locking, and horizontal slot management', 
     rmSync(tempDir, { recursive: true, force: true })
   })
 
-  it('persists favorites and horizontal palette slots atomically across reloads', () => {
+  it('always maintains 5 horizontal slots and persists views atomically across reloads', () => {
     const store = new WorkspaceStore()
     store.load(tempDir)
 
-    expect(store.getSlotCount()).toBe(5)
-    expect(store.toggleFavoriteContext('prod-eu')).toBe(true)
-    expect(store.toggleFavoriteContext('staging-eu')).toBe(true)
+    const palette = store.getActivePalette()
+    expect(palette.slots).toHaveLength(PALETTE_SLOT_COUNT)
 
-    const paletteId = store.getActivePalette().id
-    const v1 = makeSampleView('prod-eu', '/resources/deployments?namespaces=payments', 'deploy', 'Deployments')
-    const v4 = makeSampleView('staging-eu', '/topology?namespaces=payments', 'topo', 'Topologie')
+    const v1 = makeSampleView(
+      'prod-eu',
+      '/workload/deployments/payments/checkout-api',
+      'Deployment',
+      'checkout-api'
+    )
+    const v4 = makeSampleView('staging-eu', '/topology?namespaces=payments', 'Topologie')
 
-    // Place views in Slot 0 and Slot 3, keeping Slots 1, 2, 4 empty
-    expect(store.assignViewToSlot(paletteId, 0, v1)).toBe(true)
-    expect(store.assignViewToSlot(paletteId, 3, v4)).toBe(true)
+    expect(store.assignViewToSlot(palette.id, 0, v1)).toBe(true)
+    expect(store.assignViewToSlot(palette.id, 3, v4)).toBe(true)
 
-    // Reload from disk in a fresh instance
     const reloaded = new WorkspaceStore()
     reloaded.load(tempDir)
     const snap = reloaded.getSnapshot('palette', null)
 
-    expect(snap.favoriteContexts).toEqual(['prod-eu', 'staging-eu'])
-    expect(snap.palettes[0].slots[0]?.kindShort).toBe('deploy')
+    expect(snap.palettes[0].slots).toHaveLength(5)
+    expect(snap.palettes[0].slots[0]?.targetName).toBe('checkout-api')
     expect(snap.palettes[0].slots[1]).toBeNull()
     expect(snap.palettes[0].slots[2]).toBeNull()
-    expect(snap.palettes[0].slots[3]?.kindShort).toBe('topo')
+    expect(snap.palettes[0].slots[3]?.kindName).toBe('Topologie')
     expect(snap.palettes[0].slots[4]).toBeNull()
   })
 
@@ -70,63 +71,76 @@ describe('WorkspaceStore persistence, locking, and horizontal slot management', 
     store.load(tempDir)
     const pid = store.getActivePalette().id
 
-    store.assignViewToSlot(pid, 0, makeSampleView('prod-eu', '/resources/pods', 'po', 'Pods'))
-    store.assignViewToSlot(pid, 2, makeSampleView('prod-eu', '/helm', 'helm', 'Helm Releases'))
+    store.assignViewToSlot(pid, 0, makeSampleView('prod-eu', '/resources/pods', 'Pods'))
+    store.assignViewToSlot(pid, 2, makeSampleView('prod-eu', '/helm', 'Helm Releases'))
 
-    // Swap Slot 0 and Slot 2
     expect(store.moveOrSwapSlot(pid, 0, 2)).toBe(true)
-    expect(store.getActivePalette().slots[0]?.kindShort).toBe('helm')
-    expect(store.getActivePalette().slots[2]?.kindShort).toBe('po')
+    expect(store.getActivePalette().slots[0]?.kindName).toBe('Helm Releases')
+    expect(store.getActivePalette().slots[2]?.kindName).toBe('Pods')
 
-    // Move Slot 2 to empty Slot 4
     expect(store.moveOrSwapSlot(pid, 2, 4)).toBe(true)
     expect(store.getActivePalette().slots[2]).toBeNull()
-    expect(store.getActivePalette().slots[4]?.kindShort).toBe('po')
+    expect(store.getActivePalette().slots[4]?.kindName).toBe('Pods')
 
-    // Remove Slot 4 (trash or drag-outside pop)
     const popped = store.removeSlotView(pid, 4)
-    expect(popped?.kindShort).toBe('po')
+    expect(popped?.kindName).toBe('Pods')
     expect(store.getActivePalette().slots[4]).toBeNull()
   })
 
-  it('strictly enforces palette lock against accidental edits or deletion', () => {
+  it('enforces palette lock against overwrite, move, rename, clear, and delete', () => {
     const store = new WorkspaceStore()
     store.load(tempDir)
     const pid = store.getActivePalette().id
 
-    store.assignViewToSlot(pid, 1, makeSampleView('prod-eu', '/issues', 'issues', 'Probleme'))
+    store.assignViewToSlot(pid, 1, makeSampleView('prod-eu', '/issues', 'Probleme'))
     store.setPaletteLocked(pid, true)
 
-    // Attempt overwrite, move, remove, clear, and delete while locked
-    expect(
-      store.assignViewToSlot(pid, 1, makeSampleView('prod-eu', '/helm', 'helm', 'Helm'))
-    ).toBe(false)
+    expect(store.assignViewToSlot(pid, 1, makeSampleView('prod-eu', '/helm', 'Helm'))).toBe(
+      false
+    )
     expect(store.moveOrSwapSlot(pid, 1, 3)).toBe(false)
+    expect(store.renamePalette(pid, 'Geändert')).toBe(false)
     expect(store.removeSlotView(pid, 1)).toBeNull()
     expect(store.clearPaletteSlots(pid)).toBe(false)
     expect(store.deletePalette(pid)).toBe(false)
 
-    // Original view remains intact in Slot 1
-    expect(store.getActivePalette().slots[1]?.kindShort).toBe('issues')
+    expect(store.getActivePalette().slots[1]?.kindName).toBe('Probleme')
 
-    // Unlocking restores mutability
     store.setPaletteLocked(pid, false)
-    expect(store.removeSlotView(pid, 1)?.kindShort).toBe('issues')
+    expect(store.removeSlotView(pid, 1)?.kindName).toBe('Probleme')
   })
 
-  it('rescues occupied views in rightmost slots when reducing slotCount', () => {
+  it('normalizes legacy variable-length slot arrays on load to exactly 5 slots', () => {
+    writeFileSync(
+      join(tempDir, 'captain-workspaces.json'),
+      JSON.stringify({
+        version: 1,
+        activePaletteId: 'legacy-1',
+        palettes: [
+          {
+            id: 'legacy-1',
+            name: 'Legacy',
+            locked: false,
+            slots: [
+              makeSampleView('c1', '/topology', 'Topologie'),
+              null,
+              null,
+              null,
+              null,
+              null,
+              makeSampleView('c2', '/helm', 'Helm Releases')
+            ]
+          }
+        ]
+      }),
+      'utf8'
+    )
+
     const store = new WorkspaceStore()
     store.load(tempDir)
-    const pid = store.getActivePalette().id
-
-    store.assignViewToSlot(pid, 0, makeSampleView('c1', '/topology', 'topo', 'Topologie'))
-    store.assignViewToSlot(pid, 4, makeSampleView('c2', '/helm', 'helm', 'Helm'))
-
-    // Shrink from 5 slots to 3 slots -> Slot 4 ('helm') should be rescued into empty Slot 2!
-    store.updatePreferences({ slotCount: 3 })
     const slots = store.getActivePalette().slots
-    expect(slots).toHaveLength(3)
-    expect(slots[0]?.kindShort).toBe('topo')
-    expect(slots[2]?.kindShort).toBe('helm')
+    expect(slots).toHaveLength(5)
+    expect(slots[0]?.kindName).toBe('Topologie')
+    expect(slots[4]?.kindName).toBe('Helm Releases')
   })
 })

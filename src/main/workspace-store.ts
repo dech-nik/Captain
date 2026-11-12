@@ -2,64 +2,48 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { deriveClusterDisplayName, normalizeRadarRoutePath, parseRadarRoute } from '@shared/radar-route'
-import type {
-  ContextSummary,
-  PalettePreferencesPatch,
-  WorkspaceOrganizerState,
-  WorkspacePalette,
-  WorkspaceViewRef
+import {
+  PALETTE_SLOT_COUNT,
+  type ContextSummary,
+  type WorkspaceOrganizerState,
+  type WorkspacePalette,
+  type WorkspaceViewRef
 } from '@shared/types'
 
-export const MIN_PALETTE_SLOTS = 3
-export const MAX_PALETTE_SLOTS = 7
-export const DEFAULT_PALETTE_SLOTS = 5
-
 const WORKSPACE_STORE_FILE = 'captain-workspaces.json'
-const STORE_SCHEMA_VERSION = 1
+const STORE_SCHEMA_VERSION = 2
 
 interface PersistedWorkspaceData {
   version: number
-  favoriteContexts: string[]
   palettes: WorkspacePalette[]
   activePaletteId: string
-  slotCount: number
-  removeOnDragOutside: boolean
 }
 
-export function clampSlotCount(value: number | undefined): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return DEFAULT_PALETTE_SLOTS
-  }
-  return Math.max(MIN_PALETTE_SLOTS, Math.min(MAX_PALETTE_SLOTS, Math.round(value)))
-}
-
-export function resizePaletteSlots(
-  slots: Array<WorkspaceViewRef | null>,
-  targetCount: number
+export function normalizePaletteSlots(
+  slots: Array<WorkspaceViewRef | null>
 ): Array<WorkspaceViewRef | null> {
-  const count = clampSlotCount(targetCount)
-  if (slots.length === count) {
+  if (slots.length === PALETTE_SLOT_COUNT) {
     return [...slots]
   }
-  if (slots.length < count) {
-    return [...slots, ...Array<WorkspaceViewRef | null>(count - slots.length).fill(null)]
+  if (slots.length < PALETTE_SLOT_COUNT) {
+    return [
+      ...slots,
+      ...Array<WorkspaceViewRef | null>(PALETTE_SLOT_COUNT - slots.length).fill(null)
+    ]
   }
 
-  // Shrinking: keep exact positions for indices < count, and rescue any occupied overflow views
-  // into rightmost empty slots so reducing slot count does not drop saved views unnecessarily.
-  const kept = slots.slice(0, count)
-  const overflow = slots.slice(count).filter((v): v is WorkspaceViewRef => v !== null)
+  const kept = slots.slice(0, PALETTE_SLOT_COUNT)
+  const overflow = slots
+    .slice(PALETTE_SLOT_COUNT)
+    .filter((v): v is WorkspaceViewRef => v !== null)
 
   for (const extraView of overflow) {
-    let placed = false
-    for (let i = count - 1; i >= 0; i--) {
+    for (let i = PALETTE_SLOT_COUNT - 1; i >= 0; i--) {
       if (kept[i] === null) {
         kept[i] = extraView
-        placed = true
         break
       }
     }
-    if (!placed) break
   }
 
   return kept
@@ -85,21 +69,23 @@ function sanitizeViewRef(raw: unknown): WorkspaceViewRef | null {
     isTeleport: Boolean(candidate.isTeleport),
     routePath,
     category: candidate.category || parsed.category,
-    kindShort:
-      typeof candidate.kindShort === 'string' && candidate.kindShort
-        ? candidate.kindShort
-        : parsed.kindShort,
     kindName:
-      typeof candidate.kindName === 'string' && candidate.kindName
-        ? candidate.kindName
+      typeof candidate.kindName === 'string' && candidate.kindName.trim()
+        ? candidate.kindName.trim()
         : parsed.kindName,
     targetName:
       typeof candidate.targetName === 'string' && candidate.targetName.trim()
         ? candidate.targetName.trim()
         : parsed.targetName,
     namespaces: Array.isArray(candidate.namespaces)
-      ? candidate.namespaces.filter((ns): ns is string => typeof ns === 'string' && ns.trim() !== '')
+      ? candidate.namespaces.filter(
+          (ns): ns is string => typeof ns === 'string' && ns.trim() !== ''
+        )
       : parsed.namespaces,
+    isClusterScoped:
+      typeof candidate.isClusterScoped === 'boolean'
+        ? candidate.isClusterScoped
+        : parsed.isClusterScoped,
     customTitle:
       typeof candidate.customTitle === 'string' && candidate.customTitle.trim()
         ? candidate.customTitle.trim()
@@ -108,19 +94,19 @@ function sanitizeViewRef(raw: unknown): WorkspaceViewRef | null {
   }
 }
 
-function createDefaultPalette(slotCount: number, name = 'Hauptpalette'): WorkspacePalette {
+function createDefaultPalette(name = 'Hauptpalette'): WorkspacePalette {
   const now = Date.now()
   return {
     id: randomUUID(),
     name,
     locked: false,
-    slots: Array<WorkspaceViewRef | null>(clampSlotCount(slotCount)).fill(null),
+    slots: Array<WorkspaceViewRef | null>(PALETTE_SLOT_COUNT).fill(null),
     createdAt: now,
     updatedAt: now
   }
 }
 
-function sanitizePalette(raw: unknown, slotCount: number): WorkspacePalette | null {
+function sanitizePalette(raw: unknown): WorkspacePalette | null {
   if (!raw || typeof raw !== 'object') return null
   const obj = raw as Partial<WorkspacePalette>
   const name = typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim() : 'Palette'
@@ -131,29 +117,25 @@ function sanitizePalette(raw: unknown, slotCount: number): WorkspacePalette | nu
     id: typeof obj.id === 'string' && obj.id ? obj.id : randomUUID(),
     name,
     locked: Boolean(obj.locked),
-    slots: resizePaletteSlots(rawSlots, slotCount),
+    slots: normalizePaletteSlots(rawSlots),
     createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : now,
     updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : now
   }
 }
 
 /**
- * Crash-safe, atomic store for Captain's Cluster Favorites and Horizontal View Palettes.
- * Uses write-then-rename semantics so interrupted writes never corrupt saved workspaces.
+ * Crash-safe, atomic store for Captain's 5-slot Horizontal View Palettes.
  */
 export class WorkspaceStore {
   private userDataDir: string | null = null
   private data: PersistedWorkspaceData
 
   constructor() {
-    const initialPalette = createDefaultPalette(DEFAULT_PALETTE_SLOTS)
+    const initialPalette = createDefaultPalette()
     this.data = {
       version: STORE_SCHEMA_VERSION,
-      favoriteContexts: [],
       palettes: [initialPalette],
-      activePaletteId: initialPalette.id,
-      slotCount: DEFAULT_PALETTE_SLOTS,
-      removeOnDragOutside: true
+      activePaletteId: initialPalette.id
     }
   }
 
@@ -167,35 +149,22 @@ export class WorkspaceStore {
 
     try {
       const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<PersistedWorkspaceData>
-      const slotCount = clampSlotCount(parsed.slotCount)
-      const favoriteContexts = Array.isArray(parsed.favoriteContexts)
-        ? Array.from(
-            new Set(
-              parsed.favoriteContexts.filter(
-                (item): item is string => typeof item === 'string' && item.trim() !== ''
-              )
-            )
-          )
-        : []
-
       const palettes = Array.isArray(parsed.palettes)
         ? parsed.palettes
-            .map((p) => sanitizePalette(p, slotCount))
+            .map(sanitizePalette)
             .filter((p): p is WorkspacePalette => p !== null)
         : []
 
       if (palettes.length === 0) {
-        palettes.push(createDefaultPalette(slotCount))
+        palettes.push(createDefaultPalette())
       }
 
       const activeExists = palettes.some((p) => p.id === parsed.activePaletteId)
       this.data = {
         version: STORE_SCHEMA_VERSION,
-        favoriteContexts,
         palettes,
-        activePaletteId: activeExists && parsed.activePaletteId ? parsed.activePaletteId : palettes[0].id,
-        slotCount,
-        removeOnDragOutside: parsed.removeOnDragOutside ?? true
+        activePaletteId:
+          activeExists && parsed.activePaletteId ? parsed.activePaletteId : palettes[0].id
       }
     } catch {
       // Keep clean default state if file was unreadable
@@ -219,7 +188,6 @@ export class WorkspaceStore {
       } catch {
         // ignore cleanup failure
       }
-      // Fallback direct write on filesystems that disallow rename over open handle
       writeFileSync(targetFile, JSON.stringify(this.data, null, 2), {
         encoding: 'utf8',
         mode: 0o600
@@ -233,41 +201,19 @@ export class WorkspaceStore {
   ): WorkspaceOrganizerState {
     return {
       overlayMode,
-      favoriteContexts: [...this.data.favoriteContexts],
       palettes: this.data.palettes.map((p) => ({
         ...p,
         slots: p.slots.map((slot) => (slot ? { ...slot, namespaces: [...slot.namespaces] } : null))
       })),
       activePaletteId: this.data.activePaletteId,
-      slotCount: this.data.slotCount,
-      removeOnDragOutside: this.data.removeOnDragOutside,
       liveView: liveView ? { ...liveView, namespaces: [...liveView.namespaces] } : null
     }
-  }
-
-  public getSlotCount(): number {
-    return this.data.slotCount
   }
 
   public getActivePalette(): WorkspacePalette {
     return (
       this.data.palettes.find((p) => p.id === this.data.activePaletteId) || this.data.palettes[0]
     )
-  }
-
-  public toggleFavoriteContext(contextName: string): boolean {
-    const clean = contextName.trim()
-    if (!clean) return false
-    const idx = this.data.favoriteContexts.indexOf(clean)
-    let nowFavorite = false
-    if (idx >= 0) {
-      this.data.favoriteContexts.splice(idx, 1)
-    } else {
-      this.data.favoriteContexts.push(clean)
-      nowFavorite = true
-    }
-    this.persist()
-    return nowFavorite
   }
 
   public setActivePalette(paletteId: string): boolean {
@@ -280,7 +226,7 @@ export class WorkspaceStore {
   public createPalette(name?: string): WorkspacePalette {
     const cleanName =
       name && name.trim() ? name.trim() : `Palette ${this.data.palettes.length + 1}`
-    const created = createDefaultPalette(this.data.slotCount, cleanName)
+    const created = createDefaultPalette(cleanName)
     this.data.palettes.push(created)
     this.data.activePaletteId = created.id
     this.persist()
@@ -291,7 +237,7 @@ export class WorkspaceStore {
     const clean = name.trim()
     if (!clean) return false
     const palette = this.data.palettes.find((p) => p.id === paletteId)
-    if (!palette) return false
+    if (!palette || palette.locked) return false
     palette.name = clean.slice(0, 48)
     palette.updatedAt = Date.now()
     this.persist()
@@ -310,7 +256,7 @@ export class WorkspaceStore {
   public clearPaletteSlots(paletteId: string): boolean {
     const palette = this.data.palettes.find((p) => p.id === paletteId)
     if (!palette || palette.locked) return false
-    palette.slots = Array<WorkspaceViewRef | null>(this.data.slotCount).fill(null)
+    palette.slots = Array<WorkspaceViewRef | null>(PALETTE_SLOT_COUNT).fill(null)
     palette.updatedAt = Date.now()
     this.persist()
     return true
@@ -323,7 +269,7 @@ export class WorkspaceStore {
 
     this.data.palettes.splice(idx, 1)
     if (this.data.palettes.length === 0) {
-      const fresh = createDefaultPalette(this.data.slotCount)
+      const fresh = createDefaultPalette()
       this.data.palettes.push(fresh)
       this.data.activePaletteId = fresh.id
     } else if (this.data.activePaletteId === paletteId) {
@@ -341,7 +287,7 @@ export class WorkspaceStore {
   ): boolean {
     const palette = this.data.palettes.find((p) => p.id === paletteId)
     if (!palette || palette.locked) return false
-    if (slotIndex < 0 || slotIndex >= this.data.slotCount) return false
+    if (slotIndex < 0 || slotIndex >= PALETTE_SLOT_COUNT) return false
 
     const sanitized = sanitizeViewRef({
       ...view,
@@ -361,9 +307,9 @@ export class WorkspaceStore {
     if (!palette || palette.locked) return false
     if (
       fromIndex < 0 ||
-      fromIndex >= this.data.slotCount ||
+      fromIndex >= PALETTE_SLOT_COUNT ||
       toIndex < 0 ||
-      toIndex >= this.data.slotCount ||
+      toIndex >= PALETTE_SLOT_COUNT ||
       fromIndex === toIndex
     ) {
       return false
@@ -381,7 +327,7 @@ export class WorkspaceStore {
   public removeSlotView(paletteId: string, slotIndex: number): WorkspaceViewRef | null {
     const palette = this.data.palettes.find((p) => p.id === paletteId)
     if (!palette || palette.locked) return null
-    if (slotIndex < 0 || slotIndex >= this.data.slotCount) return null
+    if (slotIndex < 0 || slotIndex >= PALETTE_SLOT_COUNT) return null
 
     const existing = palette.slots[slotIndex]
     if (!existing) return null
@@ -403,30 +349,6 @@ export class WorkspaceStore {
     palette.updatedAt = Date.now()
     this.persist()
     return true
-  }
-
-  public updatePreferences(patch: PalettePreferencesPatch): void {
-    let changed = false
-    if (patch.slotCount !== undefined) {
-      const nextCount = clampSlotCount(patch.slotCount)
-      if (nextCount !== this.data.slotCount) {
-        this.data.slotCount = nextCount
-        for (const palette of this.data.palettes) {
-          palette.slots = resizePaletteSlots(palette.slots, nextCount)
-        }
-        changed = true
-      }
-    }
-    if (
-      typeof patch.removeOnDragOutside === 'boolean' &&
-      patch.removeOnDragOutside !== this.data.removeOnDragOutside
-    ) {
-      this.data.removeOnDragOutside = patch.removeOnDragOutside
-      changed = true
-    }
-    if (changed) {
-      this.persist()
-    }
   }
 
   public syncContextDisplayMetadata(contexts: ContextSummary[]): void {

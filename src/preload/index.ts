@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AppStatusState,
-  PalettePreferencesPatch,
   SaveSettingsPayload,
   TeleportMfaMode,
   WorkspaceOverlayMode,
@@ -35,12 +34,8 @@ export interface LauncherBridgeApi {
   restartBackend: () => Promise<void>
   setShortcutCaptureActive: (active: boolean) => Promise<void>
 
-  // Cluster Quick-Switcher & Favorites
+  // Horizontal 5-Slot View Palettes
   setWorkspaceOverlayMode: (mode: WorkspaceOverlayMode) => Promise<void>
-  switchClusterContext: (contextName: string) => Promise<boolean>
-  toggleFavoriteContext: (contextName: string) => Promise<boolean>
-
-  // Horizontal View Palettes
   activateWorkspaceView: (
     view: WorkspaceViewRef,
     options?: { removeFromSlot?: { paletteId: string; slotIndex: number } }
@@ -63,7 +58,6 @@ export interface LauncherBridgeApi {
   setPaletteLocked: (paletteId: string, locked: boolean) => Promise<boolean>
   clearPaletteSlots: (paletteId: string) => Promise<boolean>
   deletePalette: (paletteId: string) => Promise<boolean>
-  updatePalettePreferences: (patch: PalettePreferencesPatch) => Promise<void>
 }
 
 const api: LauncherBridgeApi = {
@@ -101,11 +95,6 @@ const api: LauncherBridgeApi = {
 
   setWorkspaceOverlayMode: (mode: WorkspaceOverlayMode) =>
     ipcRenderer.invoke('workspace:set-overlay-mode', mode),
-  switchClusterContext: (contextName: string) =>
-    ipcRenderer.invoke('workspace:switch-context', contextName),
-  toggleFavoriteContext: (contextName: string) =>
-    ipcRenderer.invoke('workspace:toggle-favorite', contextName),
-
   activateWorkspaceView: (view, options) =>
     ipcRenderer.invoke('workspace:activate-view', { view, options }),
   pinViewToSlot: (paletteId, slotIndex, view) =>
@@ -123,8 +112,7 @@ const api: LauncherBridgeApi = {
   setPaletteLocked: (paletteId, locked) =>
     ipcRenderer.invoke('workspace:set-palette-locked', { paletteId, locked }),
   clearPaletteSlots: (paletteId) => ipcRenderer.invoke('workspace:clear-palette', paletteId),
-  deletePalette: (paletteId) => ipcRenderer.invoke('workspace:delete-palette', paletteId),
-  updatePalettePreferences: (patch) => ipcRenderer.invoke('workspace:update-prefs', patch)
+  deletePalette: (paletteId) => ipcRenderer.invoke('workspace:delete-palette', paletteId)
 }
 
 contextBridge.exposeInMainWorld('launcherApi', api)
