@@ -1,3 +1,5 @@
+export const PALETTE_SLOT_COUNT = 5
+
 export type TeleportMfaMode = 'auto' | 'cross-platform' | 'platform' | 'otp'
 
 export interface TeleportMetadata {
@@ -98,7 +100,6 @@ export interface BinarySettings {
 }
 
 export type ShortcutActionId =
-  | 'quickSwitcher'
   | 'paletteMenu'
   | 'openSettings'
   | 'teleportLogin'
@@ -151,10 +152,10 @@ export interface WorkspaceViewRef {
   isTeleport: boolean
   routePath: string
   category: ViewResourceCategory
-  kindShort: string
   kindName: string
   targetName?: string
   namespaces: string[]
+  isClusterScoped?: boolean
   customTitle?: string
   createdAt: number
 }
@@ -168,21 +169,13 @@ export interface WorkspacePalette {
   updatedAt: number
 }
 
-export type WorkspaceOverlayMode = 'closed' | 'quick_switcher' | 'palette'
+export type WorkspaceOverlayMode = 'closed' | 'palette'
 
 export interface WorkspaceOrganizerState {
   overlayMode: WorkspaceOverlayMode
-  favoriteContexts: string[]
   palettes: WorkspacePalette[]
   activePaletteId: string
-  slotCount: number
-  removeOnDragOutside: boolean
   liveView: WorkspaceViewRef | null
-}
-
-export interface PalettePreferencesPatch {
-  slotCount?: number
-  removeOnDragOutside?: boolean
 }
 
 export interface AppStatusState {

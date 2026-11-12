@@ -29,7 +29,7 @@ const SAMPLE_CONTEXTS: ContextSummary[] = [
   }
 ]
 
-describe('radar-route parser & view coordinate builder', () => {
+describe('radar-route hierarchy parser & view builder', () => {
   it('strips ephemeral loopback origins so saved routes remain portable across restarts', () => {
     expect(
       normalizeRadarRoutePath('http://127.0.0.1:54129/resources/deployments/?namespaces=payments')
@@ -37,24 +37,22 @@ describe('radar-route parser & view coordinate builder', () => {
     expect(normalizeRadarRoutePath('')).toBe('/')
   })
 
-  it('parses overview and topology routes with official shortnames', () => {
+  it('parses overview and topology routes without redundant abbreviations', () => {
     const home = parseRadarRoute('/')
     expect(home.category).toBe('overview')
-    expect(home.kindShort).toBe('cluster')
     expect(home.kindName).toBe('Übersicht')
     expect(home.namespaces).toEqual([])
+    expect(home.isClusterScoped).toBe(false)
 
     const topo = parseRadarRoute('/topology?namespaces=payments,checkout&mode=traffic')
     expect(topo.category).toBe('topology')
-    expect(topo.kindShort).toBe('topo')
     expect(topo.kindName).toBe('Traffic-Topologie')
     expect(topo.namespaces).toEqual(['payments', 'checkout'])
   })
 
-  it('parses resource list and focused resource drawer routes into official K8s tokens', () => {
+  it('parses resource lists and focused resource drawers cleanly', () => {
     const deployList = parseRadarRoute('/resources/deployments?namespaces=payments')
     expect(deployList.category).toBe('workloads')
-    expect(deployList.kindShort).toBe('deploy')
     expect(deployList.kindName).toBe('Deployments')
     expect(deployList.targetName).toBeUndefined()
     expect(deployList.namespaces).toEqual(['payments'])
@@ -63,38 +61,37 @@ describe('radar-route parser & view coordinate builder', () => {
       '/resources/pods?resource=payments/checkout-7f9b8c&namespaces=payments'
     )
     expect(podDetail.category).toBe('pods')
-    expect(podDetail.kindShort).toBe('po')
     expect(podDetail.kindName).toBe('Pod')
     expect(podDetail.targetName).toBe('checkout-7f9b8c')
     expect(podDetail.namespaces).toEqual(['payments'])
   })
 
-  it('parses fullscreen workload routes for both namespaced and cluster-scoped kinds', () => {
+  it('parses fullscreen workload routes and marks cluster-scoped resources', () => {
     const workload = parseRadarRoute('/workload/deployments/payments/checkout-api?tab=logs')
     expect(workload.category).toBe('workloads')
-    expect(workload.kindShort).toBe('deploy')
     expect(workload.kindName).toBe('Deployment')
     expect(workload.targetName).toBe('checkout-api')
     expect(workload.namespaces).toEqual(['payments'])
+    expect(workload.isClusterScoped).toBe(false)
 
     const nodeWorkload = parseRadarRoute('/workload/nodes/_/worker-node-01')
     expect(nodeWorkload.category).toBe('nodes')
-    expect(nodeWorkload.kindShort).toBe('no')
     expect(nodeWorkload.kindName).toBe('Node')
     expect(nodeWorkload.targetName).toBe('worker-node-01')
     expect(nodeWorkload.namespaces).toEqual([])
+    expect(nodeWorkload.isClusterScoped).toBe(true)
   })
 
-  it('parses helm, gitops, issues, timeline, and custom resource routes', () => {
+  it('parses helm, gitops, and custom resource routes', () => {
     const helm = parseRadarRoute('/helm?release=monitoring/kube-prometheus')
     expect(helm.category).toBe('helm')
-    expect(helm.kindShort).toBe('helm')
+    expect(helm.kindName).toBe('Helm Release')
     expect(helm.targetName).toBe('kube-prometheus')
     expect(helm.namespaces).toEqual(['monitoring'])
 
     const gitops = parseRadarRoute('/gitops/detail/applications/argocd/billing-stack')
     expect(gitops.category).toBe('gitops')
-    expect(gitops.kindShort).toBe('gitops')
+    expect(gitops.kindName).toBe('GitOps')
     expect(gitops.targetName).toBe('billing-stack')
     expect(gitops.namespaces).toEqual(['argocd'])
 
@@ -113,7 +110,7 @@ describe('radar-route parser & view coordinate builder', () => {
 
     expect(view.clusterLabel).toBe('prod-eu')
     expect(view.isTeleport).toBe(true)
-    expect(view.kindShort).toBe('svc')
+    expect(view.kindName).toBe('Services')
     expect(getViewPrimaryLabel(view)).toBe('Services')
 
     expect(

@@ -12,17 +12,14 @@ import {
 
 describe('Captain keyboard shortcut normalization & matching', () => {
   it('normalizes cross-platform accelerators and rejects bare single-character keys', () => {
-    expect(sanitizeShortcutAccelerator('Ctrl+Shift+k', 'CommandOrControl+P')).toBe(
-      'CommandOrControl+Shift+K'
+    expect(sanitizeShortcutAccelerator('Ctrl+p', 'CommandOrControl+,')).toBe(
+      'CommandOrControl+P'
     )
     expect(sanitizeShortcutAccelerator('Cmd+,', 'CommandOrControl+P')).toBe(
       'CommandOrControl+,'
     )
     expect(sanitizeShortcutAccelerator('f2', 'CommandOrControl+P')).toBe('F2')
-    // Single letter without modifiers must fall back so typing in Radar is never hijacked
-    expect(sanitizeShortcutAccelerator('k', 'CommandOrControl+Shift+K')).toBe(
-      'CommandOrControl+Shift+K'
-    )
+    expect(sanitizeShortcutAccelerator('p', 'CommandOrControl+P')).toBe('CommandOrControl+P')
   })
 
   it('records valid accelerators from browser KeyboardEvents', () => {
@@ -48,7 +45,6 @@ describe('Captain keyboard shortcut normalization & matching', () => {
       })
     ).toBe('CommandOrControl+,')
 
-    // Holding only Control should return null while waiting for the main key
     expect(
       acceleratorFromKeyboardEvent({
         key: 'Control',
@@ -63,15 +59,15 @@ describe('Captain keyboard shortcut normalization & matching', () => {
   it('matches Electron before-input-event payloads accurately per OS', () => {
     const winInput = {
       type: 'keyDown',
-      key: 'K',
-      code: 'KeyK',
+      key: 'P',
+      code: 'KeyP',
       control: true,
       meta: false,
       alt: false,
-      shift: true
+      shift: false
     }
-    expect(matchesElectronInput(winInput, 'CommandOrControl+Shift+K', 'win32')).toBe(true)
-    expect(matchesElectronInput(winInput, 'CommandOrControl+Shift+K', 'darwin')).toBe(false)
+    expect(matchesElectronInput(winInput, 'CommandOrControl+P', 'win32')).toBe(true)
+    expect(matchesElectronInput(winInput, 'CommandOrControl+P', 'darwin')).toBe(false)
 
     const macInput = {
       type: 'keyDown',
@@ -85,45 +81,39 @@ describe('Captain keyboard shortcut normalization & matching', () => {
     expect(matchesElectronInput(macInput, 'CommandOrControl+,', 'darwin')).toBe(true)
   })
 
-  it('matches Alt+1..N palette quick-slot triggers', () => {
+  it('matches Alt+1..5 palette quick-slot triggers', () => {
     expect(
-      matchPaletteSlotInput(
-        {
-          type: 'keyDown',
-          key: '3',
-          code: 'Digit3',
-          alt: true,
-          control: false,
-          meta: false,
-          shift: false
-        },
-        5
-      )
+      matchPaletteSlotInput({
+        type: 'keyDown',
+        key: '3',
+        code: 'Digit3',
+        alt: true,
+        control: false,
+        meta: false,
+        shift: false
+      })
     ).toBe(2)
 
     expect(
-      matchPaletteSlotInput(
-        {
-          type: 'keyDown',
-          key: '7',
-          code: 'Digit7',
-          alt: true
-        },
-        5
-      )
+      matchPaletteSlotInput({
+        type: 'keyDown',
+        key: '6',
+        code: 'Digit6',
+        alt: true
+      })
     ).toBeNull()
   })
 
   it('formats platform keycaps and flags Radar shortcut collisions', () => {
-    expect(formatShortcutKeycaps('CommandOrControl+Shift+K', false)).toEqual([
+    expect(formatShortcutKeycaps('CommandOrControl+Shift+L', false)).toEqual([
       'Strg',
       'Umschalt',
-      'K'
+      'L'
     ])
-    expect(formatShortcutKeycaps('CommandOrControl+Shift+K', true)).toEqual(['⌘', '⇧', 'K'])
+    expect(formatShortcutKeycaps('CommandOrControl+Shift+L', true)).toEqual(['⌘', '⇧', 'L'])
 
     expect(getRadarShortcutConflictWarning('CommandOrControl+K')).toBeTruthy()
-    expect(getRadarShortcutConflictWarning(DEFAULT_SHORTCUT_BINDINGS.quickSwitcher)).toBeNull()
+    expect(getRadarShortcutConflictWarning(DEFAULT_SHORTCUT_BINDINGS.paletteMenu)).toBeNull()
     expect(normalizeShortcutBindings({}).openSettings).toBe('CommandOrControl+,')
   })
 })

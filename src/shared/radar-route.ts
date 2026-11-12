@@ -3,220 +3,193 @@ import type { ContextSummary, ViewResourceCategory, WorkspaceViewRef } from './t
 export interface ParsedRadarRoute {
   routePath: string
   category: ViewResourceCategory
-  /** Official `kubectl` shortname or CLI surface token (e.g. `po`, `deploy`, `svc`, `topo`). */
-  kindShort: string
-  /** Clear Kubernetes resource / view type label (e.g. `Deployments`, `Pods`, `Topologie`). */
+  /** Clear, non-redundant Kubernetes resource or view type label (e.g. `Deployments`, `Pod`, `Topologie`). */
   kindName: string
   /** Specific focused resource or release name when viewing a detail page/drawer. */
   targetName?: string
   /** Active namespace scope (`[]` = all namespaces / cluster-wide). */
   namespaces: string[]
+  /** True when the Kubernetes resource or Radar view is inherently cluster-scoped. */
+  isClusterScoped: boolean
 }
 
 interface K8sKindSpec {
   category: ViewResourceCategory
-  short: string
   singular: string
   pluralLabel: string
+  clusterScoped?: boolean
 }
 
-/**
- * Canonical Kubernetes resource taxonomy using official `kubectl api-resources` shortnames.
- */
 const K8S_PLURAL_SPECS: Record<string, K8sKindSpec> = {
-  pods: { category: 'pods', short: 'po', singular: 'Pod', pluralLabel: 'Pods' },
+  pods: { category: 'pods', singular: 'Pod', pluralLabel: 'Pods' },
   deployments: {
     category: 'workloads',
-    short: 'deploy',
     singular: 'Deployment',
     pluralLabel: 'Deployments'
   },
   statefulsets: {
     category: 'workloads',
-    short: 'sts',
     singular: 'StatefulSet',
     pluralLabel: 'StatefulSets'
   },
   daemonsets: {
     category: 'workloads',
-    short: 'ds',
     singular: 'DaemonSet',
     pluralLabel: 'DaemonSets'
   },
   replicasets: {
     category: 'workloads',
-    short: 'rs',
     singular: 'ReplicaSet',
     pluralLabel: 'ReplicaSets'
   },
-  jobs: { category: 'workloads', short: 'job', singular: 'Job', pluralLabel: 'Jobs' },
+  jobs: { category: 'workloads', singular: 'Job', pluralLabel: 'Jobs' },
   cronjobs: {
     category: 'workloads',
-    short: 'cj',
     singular: 'CronJob',
     pluralLabel: 'CronJobs'
   },
   jobsets: {
     category: 'workloads',
-    short: 'jobset',
     singular: 'JobSet',
     pluralLabel: 'JobSets'
   },
   horizontalpodautoscalers: {
     category: 'workloads',
-    short: 'hpa',
-    singular: 'HPA',
-    pluralLabel: 'Autoscaler (HPA)'
+    singular: 'Autoscaler',
+    pluralLabel: 'Autoscaler'
   },
   services: {
     category: 'network',
-    short: 'svc',
     singular: 'Service',
     pluralLabel: 'Services'
   },
   ingresses: {
     category: 'network',
-    short: 'ing',
     singular: 'Ingress',
     pluralLabel: 'Ingresses'
   },
   endpoints: {
     category: 'network',
-    short: 'ep',
     singular: 'Endpoints',
     pluralLabel: 'Endpoints'
   },
   endpointslices: {
     category: 'network',
-    short: 'eps',
     singular: 'EndpointSlice',
     pluralLabel: 'EndpointSlices'
   },
   networkpolicies: {
     category: 'network',
-    short: 'netpol',
     singular: 'NetworkPolicy',
     pluralLabel: 'NetworkPolicies'
   },
   gateways: {
     category: 'network',
-    short: 'gw',
     singular: 'Gateway',
     pluralLabel: 'Gateways'
   },
   httproutes: {
     category: 'network',
-    short: 'route',
     singular: 'HTTPRoute',
     pluralLabel: 'HTTPRoutes'
   },
   configmaps: {
     category: 'config',
-    short: 'cm',
     singular: 'ConfigMap',
     pluralLabel: 'ConfigMaps'
   },
   secrets: {
     category: 'config',
-    short: 'sec',
     singular: 'Secret',
     pluralLabel: 'Secrets'
   },
   resourcequotas: {
     category: 'config',
-    short: 'quota',
     singular: 'ResourceQuota',
     pluralLabel: 'ResourceQuotas'
   },
   limitranges: {
     category: 'config',
-    short: 'limits',
     singular: 'LimitRange',
     pluralLabel: 'LimitRanges'
   },
   poddisruptionbudgets: {
     category: 'config',
-    short: 'pdb',
-    singular: 'PDB',
+    singular: 'DisruptionBudget',
     pluralLabel: 'DisruptionBudgets'
   },
   persistentvolumeclaims: {
     category: 'storage',
-    short: 'pvc',
-    singular: 'PVC',
-    pluralLabel: 'VolumeClaims (PVC)'
+    singular: 'VolumeClaim',
+    pluralLabel: 'VolumeClaims'
   },
   persistentvolumes: {
     category: 'storage',
-    short: 'pv',
     singular: 'PersistentVolume',
-    pluralLabel: 'PersistentVolumes'
+    pluralLabel: 'PersistentVolumes',
+    clusterScoped: true
   },
   storageclasses: {
     category: 'storage',
-    short: 'sc',
     singular: 'StorageClass',
-    pluralLabel: 'StorageClasses'
+    pluralLabel: 'StorageClasses',
+    clusterScoped: true
   },
   volumeattachments: {
     category: 'storage',
-    short: 'volatt',
     singular: 'VolumeAttachment',
-    pluralLabel: 'VolumeAttachments'
+    pluralLabel: 'VolumeAttachments',
+    clusterScoped: true
   },
   nodes: {
     category: 'nodes',
-    short: 'no',
     singular: 'Node',
-    pluralLabel: 'Nodes'
+    pluralLabel: 'Nodes',
+    clusterScoped: true
   },
   namespaces: {
     category: 'config',
-    short: 'ns',
     singular: 'Namespace',
-    pluralLabel: 'Namespaces'
+    pluralLabel: 'Namespaces',
+    clusterScoped: true
   },
   serviceaccounts: {
     category: 'rbac',
-    short: 'sa',
     singular: 'ServiceAccount',
     pluralLabel: 'ServiceAccounts'
   },
   roles: {
     category: 'rbac',
-    short: 'role',
     singular: 'Role',
     pluralLabel: 'Roles'
   },
   rolebindings: {
     category: 'rbac',
-    short: 'rb',
     singular: 'RoleBinding',
     pluralLabel: 'RoleBindings'
   },
   clusterroles: {
     category: 'rbac',
-    short: 'crole',
     singular: 'ClusterRole',
-    pluralLabel: 'ClusterRoles'
+    pluralLabel: 'ClusterRoles',
+    clusterScoped: true
   },
   clusterrolebindings: {
     category: 'rbac',
-    short: 'crb',
     singular: 'ClusterRoleBinding',
-    pluralLabel: 'ClusterRoleBindings'
+    pluralLabel: 'ClusterRoleBindings',
+    clusterScoped: true
   },
   events: {
     category: 'timeline',
-    short: 'ev',
     singular: 'Event',
     pluralLabel: 'Events'
   },
   customresourcedefinitions: {
     category: 'crd',
-    short: 'crd',
-    singular: 'CRD',
-    pluralLabel: 'Custom Resources'
+    singular: 'CustomResource',
+    pluralLabel: 'Custom Resources',
+    clusterScoped: true
   }
 }
 
@@ -259,12 +232,10 @@ function parseResourceQueryTarget(
   return { name: trimmed }
 }
 
-function humanizeResourcePlural(slug: string): { short: string; label: string } {
+function humanizeResourcePlural(slug: string): string {
   const clean = slug.replace(/[^a-zA-Z0-9-]/g, '')
-  if (!clean) return { short: 'res', label: 'Ressourcen' }
-  const label = clean.charAt(0).toUpperCase() + clean.slice(1)
-  const short = clean.length <= 6 ? clean.toLowerCase() : clean.slice(0, 5).toLowerCase()
-  return { short, label }
+  if (!clean) return 'Ressourcen'
+  return clean.charAt(0).toUpperCase() + clean.slice(1)
 }
 
 /**
@@ -276,9 +247,10 @@ export function normalizeRadarRoutePath(rawUrlOrPath: string): string {
   if (!trimmed) return '/'
 
   try {
-    const parsed = trimmed.startsWith('http://') || trimmed.startsWith('https://')
-      ? new URL(trimmed)
-      : new URL(trimmed.startsWith('/') ? trimmed : `/${trimmed}`, 'http://radar.local')
+    const parsed =
+      trimmed.startsWith('http://') || trimmed.startsWith('https://')
+        ? new URL(trimmed)
+        : new URL(trimmed.startsWith('/') ? trimmed : `/${trimmed}`, 'http://radar.local')
     const pathname = parsed.pathname.replace(/\/+$/, '') || '/'
     return `${pathname}${parsed.search}${parsed.hash}`
   } catch {
@@ -287,8 +259,8 @@ export function normalizeRadarRoutePath(rawUrlOrPath: string): string {
 }
 
 /**
- * Deterministically parses a Radar SPA route into official Kubernetes coordinates
- * (Cluster surface, Kind shortname, Resource target, and Namespaces) with zero API calls.
+ * Deterministically parses a Radar SPA route into a clean Kubernetes hierarchy
+ * (Cluster → Namespace/Scope → Kind/Target) with zero API calls.
  */
 export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): ParsedRadarRoute {
   const routePath = normalizeRadarRoutePath(rawUrlOrPath)
@@ -307,9 +279,9 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'overview',
-      kindShort: 'cluster',
       kindName: 'Übersicht',
-      namespaces: queryNamespaces
+      namespaces: queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -319,30 +291,32 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'topology',
-      kindShort: 'topo',
       kindName: mode === 'traffic' ? 'Traffic-Topologie' : 'Topologie',
-      namespaces: queryNamespaces
+      namespaces: queryNamespaces,
+      isClusterScoped: false
     }
   }
 
   // 3. Fullscreen Workload route: /workload/:kind/:namespace/:name
   if (root === 'workload') {
     const kindSlug = (segments[1] || '').toLowerCase()
-    const nsSegment = segments[2] && segments[2] !== '_' ? segments[2] : undefined
+    const isSentinelClusterScope = segments[2] === '_'
+    const nsSegment = segments[2] && !isSentinelClusterScope ? segments[2] : undefined
     const targetName = segments.slice(3).join('/') || undefined
     const spec = K8S_PLURAL_SPECS[kindSlug]
-    const fallback = humanizeResourcePlural(kindSlug)
     const namespaces = nsSegment
       ? Array.from(new Set([nsSegment, ...queryNamespaces]))
-      : queryNamespaces
+      : isSentinelClusterScope
+        ? []
+        : queryNamespaces
 
     return {
       routePath,
       category: spec?.category ?? 'workloads',
-      kindShort: spec?.short ?? fallback.short,
-      kindName: spec ? spec.singular : fallback.label,
+      kindName: spec ? spec.singular : humanizeResourcePlural(kindSlug),
       targetName,
-      namespaces
+      namespaces,
+      isClusterScoped: Boolean(spec?.clusterScoped || isSentinelClusterScope)
     }
   }
 
@@ -358,9 +332,9 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
       return {
         routePath,
         category: 'crd',
-        kindShort: 'res',
         kindName: 'Ressourcen',
-        namespaces
+        namespaces,
+        isClusterScoped: false
       }
     }
 
@@ -369,24 +343,21 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
       return {
         routePath,
         category: spec.category,
-        kindShort: spec.short,
         kindName: focused.name ? spec.singular : spec.pluralLabel,
         targetName: focused.name,
-        namespaces
+        namespaces: spec.clusterScoped ? [] : namespaces,
+        isClusterScoped: Boolean(spec.clusterScoped)
       }
     }
 
-    const cleanPageTitle = pageTitle
-      ?.replace(/\s*[·|-]\s*Radar$/i, '')
-      .trim()
-    const fallback = humanizeResourcePlural(pluralSlug)
+    const cleanPageTitle = pageTitle?.replace(/\s*[·|-]\s*Radar$/i, '').trim()
     return {
       routePath,
       category: 'crd',
-      kindShort: fallback.short,
-      kindName: cleanPageTitle || fallback.label,
+      kindName: cleanPageTitle || humanizeResourcePlural(pluralSlug),
       targetName: focused.name,
-      namespaces
+      namespaces,
+      isClusterScoped: false
     }
   }
 
@@ -399,12 +370,12 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'helm',
-      kindShort: 'helm',
-      kindName: isCompare ? 'Helm-Vergleich' : 'Helm Releases',
+      kindName: isCompare ? 'Helm-Vergleich' : release.name ? 'Helm Release' : 'Helm Releases',
       targetName: release.name,
       namespaces: release.namespace
         ? Array.from(new Set([release.namespace, ...queryNamespaces]))
-        : queryNamespaces
+        : queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -416,12 +387,12 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'gitops',
-      kindShort: 'gitops',
       kindName: 'GitOps',
       targetName: detailName,
       namespaces: detailNs
         ? Array.from(new Set([detailNs, ...queryNamespaces]))
-        : queryNamespaces
+        : queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -431,12 +402,12 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'applications',
-      kindShort: 'app',
-      kindName: 'Applikationen',
+      kindName: appTarget.name ? 'Applikation' : 'Applikationen',
       targetName: appTarget.name,
       namespaces: appTarget.namespace
         ? Array.from(new Set([appTarget.namespace, ...queryNamespaces]))
-        : queryNamespaces
+        : queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -445,9 +416,9 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'issues',
-      kindShort: 'issues',
-      kindName: 'Probleme & Warnungen',
-      namespaces: queryNamespaces
+      kindName: 'Probleme',
+      namespaces: queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -456,9 +427,9 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'timeline',
-      kindShort: 'ev',
-      kindName: 'Event-Timeline',
-      namespaces: queryNamespaces
+      kindName: 'Events',
+      namespaces: queryNamespaces,
+      isClusterScoped: false
     }
   }
 
@@ -467,20 +438,21 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'traffic',
-      kindShort: 'traffic',
       kindName: 'Service-Traffic',
-      namespaces: queryNamespaces
+      namespaces: queryNamespaces,
+      isClusterScoped: false
     }
   }
 
   // 11. Cost & Capacity
   if (root === 'cost' || root === 'capacity') {
+    const isRightsizing = (segments[1] || '').toLowerCase() === 'rightsizing'
     return {
       routePath,
       category: 'cost',
-      kindShort: root === 'capacity' ? 'cap' : 'cost',
-      kindName: root === 'capacity' ? 'Kapazität' : 'Kosten & Ressourcen',
-      namespaces: queryNamespaces
+      kindName: root === 'capacity' ? 'Kapazität' : 'Kosten',
+      namespaces: root === 'cost' && !isRightsizing ? [] : queryNamespaces,
+      isClusterScoped: root === 'cost' && !isRightsizing
     }
   }
 
@@ -490,20 +462,19 @@ export function parseRadarRoute(rawUrlOrPath: string, pageTitle?: string): Parse
     return {
       routePath,
       category: 'checks',
-      kindShort: 'audit',
       kindName: isUpgrade ? 'Upgrade-Prüfung' : 'Cluster-Checks',
-      namespaces: queryNamespaces
+      namespaces: isUpgrade ? [] : queryNamespaces,
+      isClusterScoped: isUpgrade
     }
   }
 
-  // Fallback for workspace extensions (e.g. CloudNativePG / compare / investigations)
-  const fallback = humanizeResourcePlural(root)
+  // Fallback for workspace extensions
   return {
     routePath,
     category: 'crd',
-    kindShort: fallback.short,
-    kindName: fallback.label,
-    namespaces: queryNamespaces
+    kindName: humanizeResourcePlural(root),
+    namespaces: queryNamespaces,
+    isClusterScoped: false
   }
 }
 
@@ -547,10 +518,10 @@ export function buildWorkspaceViewRef(params: {
     isTeleport: clusterMeta.isTeleport,
     routePath: parsed.routePath,
     category: parsed.category,
-    kindShort: parsed.kindShort,
     kindName: parsed.kindName,
     targetName: parsed.targetName,
     namespaces: parsed.namespaces,
+    isClusterScoped: parsed.isClusterScoped,
     customTitle: params.customTitle,
     createdAt: params.createdAt ?? Date.now()
   }

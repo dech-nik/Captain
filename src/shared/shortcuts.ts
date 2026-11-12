@@ -1,7 +1,6 @@
-import type { ShortcutActionId, ShortcutBindings } from './types'
+import { PALETTE_SLOT_COUNT, type ShortcutActionId, type ShortcutBindings } from './types'
 
 export const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
-  quickSwitcher: 'CommandOrControl+Shift+K',
   paletteMenu: 'CommandOrControl+P',
   openSettings: 'CommandOrControl+,',
   teleportLogin: 'CommandOrControl+Shift+L',
@@ -16,19 +15,14 @@ export interface ShortcutActionMeta {
 
 export const SHORTCUT_ACTIONS: ShortcutActionMeta[] = [
   {
-    id: 'quickSwitcher',
-    label: 'Cluster-Schnellauswahl',
-    description: 'Öffnet die Suche über alle Kubernetes-Kontexte und Favoriten.'
-  },
-  {
     id: 'paletteMenu',
     label: 'Ansichts-Paletten',
-    description: 'Blendet das horizontale Paletten-Deck für gespeicherte Ansichten ein oder aus.'
+    description: 'Blendet die horizontale Ansichts-Palette ein oder aus.'
   },
   {
     id: 'openSettings',
     label: 'Captain Einstellungen',
-    description: 'Öffnet oder schließt dieses Einstellungsfenster.'
+    description: 'Öffnet oder schließt die Einstellungen.'
   },
   {
     id: 'teleportLogin',
@@ -42,10 +36,6 @@ export const SHORTCUT_ACTIONS: ShortcutActionMeta[] = [
   }
 ]
 
-/**
- * Shortcuts owned by Radar itself inside the embedded workspace view.
- * Warning users if they bind one of these avoids accidentally shadowing Radar features.
- */
 const RADAR_RESERVED_SHORTCUTS: Record<string, string> = {
   'CommandOrControl+K': 'Wird in Radar bereits für die globale Ressourcen-Suche genutzt.',
   'Control+Shift+D': 'Wird in Radar für das Diagnose-Fenster genutzt.',
@@ -89,7 +79,7 @@ function normalizeKeyToken(rawKey: string): string | null {
       return '-'
     case 'escape':
     case 'esc':
-      return null // Escape is reserved for closing dialogs
+      return null
     case 'arrowup':
     case 'up':
       return 'Up'
@@ -104,7 +94,7 @@ function normalizeKeyToken(rawKey: string): string | null {
       return 'Right'
     case 'enter':
     case 'return':
-      return null // Enter submits forms
+      return null
     case 'tab':
       return null
     default:
@@ -122,9 +112,6 @@ function normalizeKeyToken(rawKey: string): string | null {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
 }
 
-/**
- * Normalizes a persisted or user-supplied Electron accelerator string.
- */
 export function sanitizeShortcutAccelerator(raw: string | undefined, fallback: string): string {
   if (!raw || typeof raw !== 'string') return fallback
   const parts = raw
@@ -177,10 +164,6 @@ export function normalizeShortcutBindings(
   partial?: Partial<ShortcutBindings>
 ): ShortcutBindings {
   return {
-    quickSwitcher: sanitizeShortcutAccelerator(
-      partial?.quickSwitcher,
-      DEFAULT_SHORTCUT_BINDINGS.quickSwitcher
-    ),
     paletteMenu: sanitizeShortcutAccelerator(
       partial?.paletteMenu,
       DEFAULT_SHORTCUT_BINDINGS.paletteMenu
@@ -200,10 +183,6 @@ export function normalizeShortcutBindings(
   }
 }
 
-/**
- * Converts a browser `KeyboardEvent` inside the shortcut recorder into an Electron accelerator.
- * Returns `null` while only modifiers are held or if an unsupported key is pressed.
- */
 export function acceleratorFromKeyboardEvent(event: {
   key: string
   code?: string
@@ -215,7 +194,6 @@ export function acceleratorFromKeyboardEvent(event: {
   if (MODIFIER_KEYS.has(event.key)) return null
 
   let candidateKey = event.key
-  // On macOS/Windows, Alt+number or Shift+comma can produce shifted symbols; fall back to physical digit/comma code
   if (event.code) {
     if (/^Key([A-Z])$/.test(event.code)) {
       candidateKey = event.code.slice(3)
@@ -260,9 +238,6 @@ export interface ElectronInputLike {
   isAutoRepeat?: boolean
 }
 
-/**
- * Matches an Electron `before-input-event` payload against an accelerator on the current platform.
- */
 export function matchesElectronInput(
   input: ElectronInputLike,
   accelerator: string,
@@ -303,12 +278,9 @@ export function matchesElectronInput(
 }
 
 /**
- * Matches `Alt+1` .. `Alt+9` quick-slot triggers (returns 0-based slot index or `null`).
+ * Matches `Alt+1` .. `Alt+5` quick-slot triggers (returns 0-based slot index or `null`).
  */
-export function matchPaletteSlotInput(
-  input: ElectronInputLike,
-  slotCount: number
-): number | null {
+export function matchPaletteSlotInput(input: ElectronInputLike): number | null {
   if (input.type !== 'keyDown' || input.isAutoRepeat) return null
   if (!input.alt || input.control || input.meta || input.shift) return null
 
@@ -319,15 +291,12 @@ export function matchPaletteSlotInput(
     digit = Number(input.key)
   }
 
-  if (digit !== null && digit >= 1 && digit <= slotCount) {
+  if (digit !== null && digit >= 1 && digit <= PALETTE_SLOT_COUNT) {
     return digit - 1
   }
   return null
 }
 
-/**
- * Formats an Electron accelerator into crisp platform-appropriate keycap labels for UI display.
- */
 export function formatShortcutKeycaps(
   accelerator: string,
   isMac: boolean = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform)
