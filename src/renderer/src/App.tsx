@@ -3,11 +3,13 @@ import type { AppStatusState } from '@shared/types'
 import { CaptainIcon, CaptainWordmark } from './components/BrandMark'
 import { LoginModal } from './components/LoginModal'
 import { SettingsModal } from './components/SettingsModal'
+import { WorkspaceOverlay } from './components/WorkspaceOverlay'
 
 export const App: React.FC = () => {
   const [state, setState] = useState<AppStatusState | null>(null)
 
   useEffect(() => {
+    if (!window.launcherApi) return undefined
     window.launcherApi.getState().then(setState).catch(() => {})
     const unsubscribe = window.launcherApi.onStateChange((next) => {
       setState(next)
@@ -24,6 +26,8 @@ export const App: React.FC = () => {
       <SettingsModal
         binaries={state.binaries}
         preferences={state.preferences}
+        contexts={state.contexts}
+        workspace={state.workspace}
         errorMessage={state.errorMessage}
         canClose={state.phase !== 'missing_binaries'}
       />
@@ -106,6 +110,17 @@ export const App: React.FC = () => {
           </div>
         </div>
       </div>
+    )
+  }
+
+  if (state.phase === 'ready' && state.workspace.overlayMode !== 'closed') {
+    return (
+      <WorkspaceOverlay
+        contexts={state.contexts}
+        currentContext={state.currentContext}
+        workspace={state.workspace}
+        preferences={state.preferences}
+      />
     )
   }
 
