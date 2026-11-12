@@ -29,6 +29,11 @@ export interface ProxyContextsUpdatedEvent {
   currentContext: string
 }
 
+export interface ProxyActiveContextEvent {
+  type: 'proxy:active_context'
+  context: string
+}
+
 export interface ProxyAuthRequiredEvent {
   type: 'auth:required'
   context: string
@@ -48,6 +53,7 @@ export interface ProxyDiagnosticEvent {
 export type ProxyOutboundEvent =
   | ProxyReadyEvent
   | ProxyContextsUpdatedEvent
+  | ProxyActiveContextEvent
   | ProxyAuthRequiredEvent
   | ProxyDiagnosticEvent
 
@@ -91,6 +97,15 @@ export interface BinarySettings {
   kubeconfigEnv: string
 }
 
+export type ShortcutActionId =
+  | 'quickSwitcher'
+  | 'paletteMenu'
+  | 'openSettings'
+  | 'teleportLogin'
+  | 'reconnectCluster'
+
+export type ShortcutBindings = Record<ShortcutActionId, string>
+
 export interface CaptainPreferences {
   defaultTeleportProxy: string
   defaultTeleportUser: string
@@ -98,6 +113,9 @@ export interface CaptainPreferences {
   syncAllClusters: boolean
   autoSelectTeleportCluster: boolean
   showTerminalByDefault: boolean
+  blurRadarBackdrop: boolean
+  shortcuts: ShortcutBindings
+  enableSlotShortcuts: boolean
 }
 
 export interface SaveSettingsPayload {
@@ -106,13 +124,76 @@ export interface SaveSettingsPayload {
   preferences: CaptainPreferences
 }
 
+export type ViewResourceCategory =
+  | 'overview'
+  | 'topology'
+  | 'pods'
+  | 'workloads'
+  | 'network'
+  | 'config'
+  | 'storage'
+  | 'nodes'
+  | 'rbac'
+  | 'helm'
+  | 'gitops'
+  | 'applications'
+  | 'issues'
+  | 'timeline'
+  | 'traffic'
+  | 'cost'
+  | 'checks'
+  | 'crd'
+
+export interface WorkspaceViewRef {
+  id: string
+  context: string
+  clusterLabel: string
+  isTeleport: boolean
+  routePath: string
+  category: ViewResourceCategory
+  kindShort: string
+  kindName: string
+  targetName?: string
+  namespaces: string[]
+  customTitle?: string
+  createdAt: number
+}
+
+export interface WorkspacePalette {
+  id: string
+  name: string
+  locked: boolean
+  slots: Array<WorkspaceViewRef | null>
+  createdAt: number
+  updatedAt: number
+}
+
+export type WorkspaceOverlayMode = 'closed' | 'quick_switcher' | 'palette'
+
+export interface WorkspaceOrganizerState {
+  overlayMode: WorkspaceOverlayMode
+  favoriteContexts: string[]
+  palettes: WorkspacePalette[]
+  activePaletteId: string
+  slotCount: number
+  removeOnDragOutside: boolean
+  liveView: WorkspaceViewRef | null
+}
+
+export interface PalettePreferencesPatch {
+  slotCount?: number
+  removeOnDragOutside?: boolean
+}
+
 export interface AppStatusState {
   phase: 'starting' | 'missing_binaries' | 'ready' | 'auth_required' | 'fatal_error'
   radarUrl: string | null
   currentContext: string
+  contexts: ContextSummary[]
   errorMessage?: string
   binaries: BinarySettings
   preferences: CaptainPreferences
+  workspace: WorkspaceOrganizerState
   login: LoginUiState | null
   settingsOpen: boolean
 }
