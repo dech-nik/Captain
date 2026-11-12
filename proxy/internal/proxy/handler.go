@@ -37,9 +37,10 @@ type Server struct {
 	loopbackToken string
 	ipcChan       *ipc.Channel
 
-	mu        sync.RWMutex
-	registry  *kubeconfig.Registry
-	upstreams map[string]*contextUpstream
+	mu            sync.RWMutex
+	registry      *kubeconfig.Registry
+	upstreams     map[string]*contextUpstream
+	activeContext string
 
 	authMu       sync.Mutex
 	authPending  map[string]bool      // Keyed by authKey(entry) so one login covers shared Teleport cluster
@@ -174,6 +175,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeK8sStatus(w, http.StatusUnauthorized, "Unauthorized", "no Kubernetes context configured yet; login to Teleport to load clusters")
 		return
 	}
+
+	s.recordActiveContext(ctxName)
 
 	// A context removed by `tsh logout` is still routed here. Answer 401 (reachable, unauthorized)
 	// instead of dropping the context or returning 502, which Radar would show as offline.
@@ -374,6 +377,35 @@ func (s *Server) emitDiagnostic(ctxName, category string, statusCode int, detail
 		StatusCode: statusCode,
 		Detail:     detail,
 	})
+}
+
+func (s *Server) recordActiveContext(ctxName string) {
+	if ctxName == "" {
+		return
+	}
+	s.mu.RLock()
+	same := s.activeContext == ctxName
+	_, knownInReg := s.registry.Entries[ctxName]
+	_, knownLost := s.sessionLost[ctxName]
+	s.mu.RUnlock()
+	if same || (!knownInReg && !knownLost) {
+		return
+	}
+
+	s.mu.Lock()
+	if s.activeContext == ctxName {
+		s.mu.Unlock()
+		return
+	}
+	s.activeContext = ctxName
+	s.mu.Unlock()
+
+	if s.ipcChan != nil {
+		_ = s.ipcChan.Send(ipc.ActiveContextEvent{
+			Type:    "proxy:active_context",
+			Context: ctxName,
+		})
+	}
 }
 
 func authDedupeKey(entry kubeconfig.ContextEntry) string {

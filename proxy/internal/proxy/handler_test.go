@@ -342,6 +342,70 @@ func TestReverseProxyEndToEnd_AuthFlowStreamingAndReloginReset(t *testing.T) {
 	}
 }
 
+func TestActiveContextEventDeduped(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	tmpDir := t.TempDir()
+	kcPath := filepath.Join(tmpDir, "config")
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["c1"] = &clientcmdapi.Cluster{Server: upstream.URL}
+	cfg.Clusters["c2"] = &clientcmdapi.Cluster{Server: upstream.URL}
+	cfg.AuthInfos["u"] = &clientcmdapi.AuthInfo{Token: "tok"}
+	cfg.Contexts["ctx-alpha"] = &clientcmdapi.Context{Cluster: "c1", AuthInfo: "u"}
+	cfg.Contexts["ctx-beta"] = &clientcmdapi.Context{Cluster: "c2", AuthInfo: "u"}
+	cfg.CurrentContext = "ctx-alpha"
+	if err := clientcmd.WriteToFile(*cfg, kcPath); err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+
+	reg, err := kubeconfig.LoadRegistry([]string{kcPath})
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+
+	var ipcBuf safeBuffer
+	srv := NewServer(reg, "tok-secret", ipc.NewChannel(&ipcBuf))
+	proxyTS := httptest.NewServer(srv)
+	defer proxyTS.Close()
+
+	sendReq := func(ctxName string) {
+		req, _ := http.NewRequest(http.MethodGet, proxyTS.URL+"/clusters/"+ctxName+"/version", nil)
+		req.Header.Set("Authorization", "Bearer tok-secret")
+		resp, doErr := http.DefaultClient.Do(req)
+		if doErr != nil {
+			t.Fatalf("request failed: %v", doErr)
+		}
+		_ = resp.Body.Close()
+	}
+
+	// Multiple requests to ctx-alpha -> only 1 active_context event
+	sendReq("ctx-alpha")
+	sendReq("ctx-alpha")
+	sendReq("ctx-beta")
+	sendReq("ctx-beta")
+
+	var activeEvents []string
+	for _, line := range strings.Split(strings.TrimSpace(ipcBuf.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) == nil && m["type"] == "proxy:active_context" {
+			if c, ok := m["context"].(string); ok {
+				activeEvents = append(activeEvents, c)
+			}
+		}
+	}
+
+	if len(activeEvents) != 2 || activeEvents[0] != "ctx-alpha" || activeEvents[1] != "ctx-beta" {
+		t.Fatalf("expected activeEvents [ctx-alpha ctx-beta], got %v", activeEvents)
+	}
+}
+
 type safeBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

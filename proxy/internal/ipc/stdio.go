@@ -31,6 +31,12 @@ type ContextsUpdatedEvent struct {
 	CurrentContext string                      `json:"currentContext"`
 }
 
+// ActiveContextEvent notifies Electron when Radar begins routing traffic to a different context.
+type ActiveContextEvent struct {
+	Type    string `json:"type"`
+	Context string `json:"context"`
+}
+
 // AuthRequiredEvent notifies Electron that an upstream request failed due to missing/expired/revoked auth.
 type AuthRequiredEvent struct {
 	Type       string                      `json:"type"`
