@@ -144,32 +144,4 @@ export const CaptainWordmark: React.FC<CaptainWordmarkProps> = ({ height = 28, c
   )
 }
 
-/**
- * Teleport authentication header lockup styled after Teleport's official web sign-in screen.
- */
-export const TeleportBadge: React.FC<{ size?: number }> = ({ size = 32 }) => {
-  return (
-    <div className="teleport-brand-lockup" aria-label="Teleport">
-      <svg viewBox="0 0 40 40" width={size} height={size} fill="none" aria-hidden="true">
-        <rect width="40" height="40" rx="10" fill="#512FC9" />
-        <path
-          d="M 20 8.5 A 11.5 11.5 0 1 1 9.6 15.1"
-          stroke="#FFFFFF"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 14.2 14.2 A 8.2 8.2 0 1 1 12.4 23.2"
-          stroke="#C4B5FD"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-        <circle cx="20" cy="20" r="3" fill="#FFFFFF" />
-        <circle cx="12.2" cy="11.4" r="2" fill="#DDD6FE" />
-      </svg>
-      <span className="teleport-brand-word">teleport</span>
-    </div>
-  )
-}
-
 export const BrandMark = CaptainIcon

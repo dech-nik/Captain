@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { LoginStep, LoginUiState, TeleportMfaMode } from '@shared/types'
-import { CaptainWordmark, TeleportBadge } from './BrandMark'
+import { CaptainWordmark } from './BrandMark'
 import { EmbeddedTerminal } from './EmbeddedTerminal'
 
 interface LoginModalProps {
@@ -282,9 +282,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ login }) => {
         </div>
 
         <div className="dialog-body">
-          {/* Official-style Teleport Sign-In Mask Header */}
+          {/* Teleport Sign-In Header */}
           <div className="teleport-auth-hero">
-            <TeleportBadge size={32} />
             <h2 className="teleport-auth-title">{heading.title}</h2>
             <p className="teleport-auth-subtitle">{heading.subtitle}</p>
             {hostDisplay && login.step !== 'proxy_input' && (

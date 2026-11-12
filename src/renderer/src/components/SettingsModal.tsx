@@ -6,22 +6,21 @@ import {
   getRadarShortcutConflictWarning,
   SHORTCUT_ACTIONS
 } from '@shared/shortcuts'
-import type {
-  BinarySettings,
-  CaptainPreferences,
-  ContextSummary,
-  ShortcutActionId,
-  ShortcutBindings,
-  TeleportMfaMode,
-  WorkspaceOrganizerState
+import {
+  PALETTE_SLOT_COUNT,
+  type BinarySettings,
+  type CaptainPreferences,
+  type ShortcutActionId,
+  type ShortcutBindings,
+  type TeleportMfaMode,
+  type WorkspaceOrganizerState
 } from '@shared/types'
 import { CaptainWordmark } from './BrandMark'
-import { ClusterHelmIcon, LockIcon, StarIcon, TrashBinIcon } from './K8sIcons'
+import { LockIcon, TrashBinIcon } from './K8sIcons'
 
 interface SettingsModalProps {
   binaries: BinarySettings
   preferences: CaptainPreferences
-  contexts: ContextSummary[]
   workspace: WorkspaceOrganizerState
   errorMessage?: string
   canClose: boolean
@@ -29,12 +28,9 @@ interface SettingsModalProps {
 
 type SettingsSection = 'teleport' | 'workspace' | 'palettes' | 'controls' | 'system'
 
-const SLOT_COUNT_OPTIONS = [3, 4, 5, 6, 7]
-
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   binaries,
   preferences,
-  contexts,
   workspace,
   errorMessage,
   canClose
@@ -82,7 +78,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [restarting, setRestarting] = useState(false)
   const [identityCleared, setIdentityCleared] = useState(false)
 
-  // Manage shortcut capture lock in Electron main process while recording a keybinding
   useEffect(() => {
     void window.launcherApi.setShortcutCaptureActive(recordingAction !== null)
     return () => {
@@ -243,14 +238,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="btn-ghost-icon"
               onClick={() => void window.launcherApi.closeSettings()}
               title="Schließen (Esc)"
+              aria-label="Schließen"
             >
-              <span>Schließen</span>
+              <span>✕</span>
             </button>
           )}
         </div>
 
         <div className="settings-split-layout">
-          {/* Left Navigation Rail */}
           <nav className="settings-nav-rail" aria-label="Einstellungsbereiche">
             <button
               type="button"
@@ -285,7 +280,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <line x1="8.5" y1="7" x2="8.5" y2="17" />
                 <line x1="15.5" y1="7" x2="15.5" y2="17" />
               </svg>
-              <span>Paletten & Favoriten</span>
+              <span>Paletten</span>
             </button>
 
             <button
@@ -317,7 +312,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </nav>
 
-          {/* Right Content Pane */}
           <div className="settings-content-pane">
             {errorMessage && (
               <div className="callout-error">
@@ -423,10 +417,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSection === 'workspace' && (
                 <>
                   <div className="settings-pane-intro">
-                    <h3 className="settings-pane-title">Arbeitsbereich & Darstellung</h3>
+                    <h3 className="settings-pane-title">Arbeitsbereich</h3>
                     <p className="settings-pane-desc">
-                      Verhalten beim Synchronisieren von Kubernetes-Clustern und beim Einblenden von
-                      Captain-Menüs über Radar.
+                      Darstellung über Radar sowie Synchronisierung von Teleport-Clustern.
                     </p>
                   </div>
 
@@ -440,8 +433,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           Radar-Hintergrund bei geöffneten Menüs weichzeichnen
                         </span>
                         <span className="pref-toggle-desc">
-                          Lässt den aktiven Cluster-Arbeitsbereich hinter Einstellungen, Schnellauswahl
-                          und Paletten sanft verschwimmen statt ihn vollständig auszublenden.
+                          Zeichnet den aktiven Arbeitsbereich hinter Paletten und Einstellungen sanft
+                          weich, statt ihn auszublenden.
                         </span>
                       </div>
                       <button
@@ -468,7 +461,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </span>
                         <span className="pref-toggle-desc">
                           Führt nach der Anmeldung <code>tsh kube login --all</code> aus, damit
-                          sämtliche berechtigten Kubernetes-Cluster sofort verfügbar sind.
+                          sämtliche berechtigten Kubernetes-Cluster verfügbar sind.
                         </span>
                       </div>
                       <button
@@ -542,93 +535,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </>
               )}
 
-              {/* SECTION 3: PALETTES & CLUSTER FAVORITES */}
+              {/* SECTION 3: PALETTES */}
               {activeSection === 'palettes' && (
                 <>
                   <div className="settings-pane-intro">
-                    <h3 className="settings-pane-title">Paletten & Favoriten</h3>
+                    <h3 className="settings-pane-title">Ansichts-Paletten</h3>
                     <p className="settings-pane-desc">
-                      Konfigurieren Sie Ihre horizontalen Ansichts-Paletten sowie angeheftete
-                      Cluster-Favoriten für die Schnellauswahl.
+                      Verwalten Sie Ihre gespeicherten Paletten. Jede Palette fasst {PALETTE_SLOT_COUNT}{' '}
+                      horizontale Ansichten.
                     </p>
                   </div>
 
-                  {/* Layout & Drag Behavior */}
-                  <div className="pref-card-list">
-                    <div className="pref-row-static">
-                      <div className="pref-toggle-copy">
-                        <span className="pref-toggle-title">
-                          Anzahl horizontaler Slots pro Palette
-                        </span>
-                        <span className="pref-toggle-desc">
-                          Standardmäßig 5 Ansichten nebeneinander für optimale Übersicht auf
-                          Breitbildschirmen.
-                        </span>
-                      </div>
-                      <div className="slot-count-pills">
-                        {SLOT_COUNT_OPTIONS.map((count) => (
-                          <button
-                            key={count}
-                            type="button"
-                            className={`slot-count-pill ${
-                              workspace.slotCount === count ? 'is-active' : ''
-                            }`}
-                            onClick={() =>
-                              void window.launcherApi.updatePalettePreferences({
-                                slotCount: count
-                              })
-                            }
-                          >
-                            {count}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div
-                      className="pref-toggle-row"
-                      onClick={() =>
-                        void window.launcherApi.updatePalettePreferences({
-                          removeOnDragOutside: !workspace.removeOnDragOutside
-                        })
-                      }
-                    >
-                      <div className="pref-toggle-copy">
-                        <span className="pref-toggle-title">
-                          Herausziehen aus Palette öffnet Ansicht & gibt Slot frei
-                        </span>
-                        <span className="pref-toggle-desc">
-                          Wenn Sie eine ungesperrte Ansicht aus der Palette nach außen auf den
-                          Arbeitsbereich ziehen, wird sie direkt besucht und aus der Palette gelöst.
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={workspace.removeOnDragOutside}
-                        className={`switch-track ${workspace.removeOnDragOutside ? 'is-on' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void window.launcherApi.updatePalettePreferences({
-                            removeOnDragOutside: !workspace.removeOnDragOutside
-                          })
-                        }}
-                      >
-                        <span className="switch-thumb" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Saved Palettes Management */}
                   <div className="field-block">
-                    <div className="field-label-row">
-                      <label className="field-label">Gespeicherte Ansichts-Paletten</label>
-                      <span className="field-hint">
-                        {workspace.palettes.length}{' '}
-                        {workspace.palettes.length === 1 ? 'Palette' : 'Paletten'}
-                      </span>
-                    </div>
-
                     <div className="palette-manage-list">
                       {workspace.palettes.map((palette) => {
                         const occupied = palette.slots.filter(Boolean).length
@@ -656,11 +574,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               ) : (
                                 <>
                                   <span className="palette-manage-name">{palette.name}</span>
-                                  {isCurrent && (
-                                    <span className="qs-active-pill">Aktiv</span>
-                                  )}
+                                  {isCurrent && <span className="pill-active-tag">Aktiv</span>}
                                   <span className="palette-manage-meta">
-                                    {occupied}/{workspace.slotCount} belegt
+                                    {occupied}/{PALETTE_SLOT_COUNT}
                                   </span>
                                 </>
                               )}
@@ -675,26 +591,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     void window.launcherApi.selectPalette(palette.id)
                                   }
                                 >
-                                  Aktivieren
+                                  Auswählen
                                 </button>
                               )}
-
-                              <button
-                                type="button"
-                                className={`palette-mini-btn ${
-                                  palette.locked ? 'is-locked-chip' : ''
-                                }`}
-                                onClick={() =>
-                                  void window.launcherApi.setPaletteLocked(
-                                    palette.id,
-                                    !palette.locked
-                                  )
-                                }
-                                title={palette.locked ? 'Palette entsperren' : 'Palette sperren'}
-                              >
-                                <LockIcon locked={palette.locked} size={12} />
-                                <span>{palette.locked ? 'Gesperrt' : 'Sperren'}</span>
-                              </button>
 
                               {!palette.locked && (
                                 <>
@@ -720,20 +619,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       Leeren
                                     </button>
                                   )}
-
-                                  {workspace.palettes.length > 1 && (
-                                    <button
-                                      type="button"
-                                      className="palette-mini-btn is-danger"
-                                      onClick={() =>
-                                        void window.launcherApi.deletePalette(palette.id)
-                                      }
-                                      title="Palette löschen"
-                                    >
-                                      <TrashBinIcon size={12} />
-                                    </button>
-                                  )}
                                 </>
+                              )}
+
+                              <button
+                                type="button"
+                                className={`palette-icon-chip ${
+                                  palette.locked ? 'is-locked' : ''
+                                }`}
+                                onClick={() =>
+                                  void window.launcherApi.setPaletteLocked(
+                                    palette.id,
+                                    !palette.locked
+                                  )
+                                }
+                                title={palette.locked ? 'Palette entsperren' : 'Palette sperren'}
+                                aria-label={
+                                  palette.locked ? 'Palette entsperren' : 'Palette sperren'
+                                }
+                              >
+                                <LockIcon locked={palette.locked} size={13} />
+                              </button>
+
+                              {!palette.locked && workspace.palettes.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="palette-icon-chip is-danger"
+                                  onClick={() =>
+                                    void window.launcherApi.deletePalette(palette.id)
+                                  }
+                                  title="Palette löschen"
+                                  aria-label="Palette löschen"
+                                >
+                                  <TrashBinIcon size={13} />
+                                </button>
                               )}
                             </div>
                           </div>
@@ -741,14 +660,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       })}
                     </div>
 
-                    <div className="input-action-row" style={{ marginTop: '6px' }}>
+                    <div className="input-action-row" style={{ marginTop: '8px' }}>
                       <div className="input-well">
                         <input
                           type="text"
                           className="well-input"
                           value={newPaletteName}
                           onChange={(e) => setNewPaletteName(e.target.value)}
-                          placeholder="Name für neue Palette (z. B. Produktion, Incident, Staging)…"
+                          placeholder="Neue Palette (z. B. Produktion, Incident, Staging)…"
                           maxLength={48}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -763,41 +682,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="btn btn-secondary"
                         onClick={() => void handleCreatePalette()}
                       >
-                        + Palette erstellen
+                        Erstellen
                       </button>
                     </div>
                   </div>
-
-                  {/* Favorite Contexts quick management */}
-                  {contexts.length > 0 && (
-                    <div className="field-block">
-                      <div className="field-label-row">
-                        <label className="field-label">Cluster-Favoriten</label>
-                        <span className="field-hint">
-                          Erscheinen ganz oben in der Cluster-Schnellauswahl
-                        </span>
-                      </div>
-                      <div className="fav-context-chips">
-                        {contexts.map((ctx) => {
-                          const isFav = workspace.favoriteContexts.includes(ctx.name)
-                          return (
-                            <button
-                              key={ctx.name}
-                              type="button"
-                              className={`fav-context-chip ${isFav ? 'is-fav' : ''}`}
-                              onClick={() =>
-                                void window.launcherApi.toggleFavoriteContext(ctx.name)
-                              }
-                            >
-                              <StarIcon filled={isFav} size={12} />
-                              <ClusterHelmIcon size={12} />
-                              <span>{ctx.name}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
 
@@ -805,15 +693,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSection === 'controls' && (
                 <>
                   <div className="settings-pane-intro">
-                    <div className="field-label-row">
-                      <div>
-                        <h3 className="settings-pane-title">Steuerung & Tastenkürzel</h3>
-                        <p className="settings-pane-desc">
-                          Passen Sie sämtliche Captain-Tastenkombinationen an. Klicken Sie auf ein
-                          Tastenkürzel, um eine neue Kombination aufzunehmen.
-                        </p>
-                      </div>
-                    </div>
+                    <h3 className="settings-pane-title">Steuerung</h3>
+                    <p className="settings-pane-desc">
+                      Klicken Sie auf ein Tastenkürzel, um eine neue Kombination aufzunehmen.
+                    </p>
                   </div>
 
                   <div className="shortcut-list">
@@ -846,9 +729,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 }
                               >
                                 {isRecording ? (
-                                  <span className="recording-prompt">
-                                    Tastenkombination drücken… (Esc)
-                                  </span>
+                                  <span className="recording-prompt">Taste drücken…</span>
                                 ) : (
                                   <span className="keycap-group">
                                     {keycaps.map((cap, idx) => (
@@ -872,7 +753,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   }
                                   title="Auf Standardwert zurücksetzen"
                                 >
-                                  Reset
+                                  ↺
                                 </button>
                               )}
                             </div>
@@ -881,7 +762,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           {(radarWarning || duplicateWith) && (
                             <div className="shortcut-warning-note">
                               {duplicateWith
-                                ? `Hinweis: Dasselbe Kürzel ist auch für „${duplicateWith}“ vergeben.`
+                                ? `Konflikt mit „${duplicateWith}“.`
                                 : radarWarning}
                             </div>
                           )}
@@ -897,12 +778,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <div className="pref-toggle-copy">
                         <span className="pref-toggle-title">
-                          Direktwahl für Paletten-Slots ({isMac ? '⌥1' : 'Alt+1'} bis{' '}
-                          {isMac ? `⌥${workspace.slotCount}` : `Alt+${workspace.slotCount}`})
+                          Direktwahl für Paletten-Slots ({isMac ? '⌥1' : 'Alt+1'}–
+                          {isMac ? `⌥${PALETTE_SLOT_COUNT}` : `Alt+${PALETTE_SLOT_COUNT}`})
                         </span>
                         <span className="pref-toggle-desc">
-                          Springt jederzeit direkt zur gespeicherten Ansicht im entsprechenden Slot
-                          der aktiven Palette, ohne das Menü zuvor öffnen zu müssen.
+                          Springt direkt zur gespeicherten Ansicht im jeweiligen Slot der aktiven
+                          Palette.
                         </span>
                       </div>
                       <button
@@ -921,7 +802,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="info-kv-row">
-                    <span className="info-kv-key">Alle Captain-Tastenkürzel</span>
+                    <span className="info-kv-key">Tastenkürzel</span>
                     <button
                       type="button"
                       className="btn btn-secondary"
@@ -944,7 +825,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h3 className="settings-pane-title">System & Werkzeuge</h3>
                     <p className="settings-pane-desc">
                       Pfade zu den lokal installierten CLI-Werkzeugen <code>tsh</code> und{' '}
-                      <code>radar</code> sowie Diagnose der lokalen Dienste.
+                      <code>radar</code>.
                     </p>
                   </div>
 
@@ -1049,7 +930,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="btn btn-primary"
             disabled={saving || recordingAction !== null}
           >
-            <span>{saving ? 'Wird gespeichert…' : 'Einstellungen speichern'}</span>
+            <span>{saving ? 'Wird gespeichert…' : 'Speichern'}</span>
             <span className="kbd-hint">↵</span>
           </button>
         </div>

@@ -26,7 +26,6 @@ export const App: React.FC = () => {
       <SettingsModal
         binaries={state.binaries}
         preferences={state.preferences}
-        contexts={state.contexts}
         workspace={state.workspace}
         errorMessage={state.errorMessage}
         canClose={state.phase !== 'missing_binaries'}
@@ -113,15 +112,8 @@ export const App: React.FC = () => {
     )
   }
 
-  if (state.phase === 'ready' && state.workspace.overlayMode !== 'closed') {
-    return (
-      <WorkspaceOverlay
-        contexts={state.contexts}
-        currentContext={state.currentContext}
-        workspace={state.workspace}
-        preferences={state.preferences}
-      />
-    )
+  if (state.phase === 'ready' && state.workspace.overlayMode === 'palette') {
+    return <WorkspaceOverlay workspace={state.workspace} />
   }
 
   return null

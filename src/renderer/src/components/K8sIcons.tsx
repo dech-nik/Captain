@@ -7,25 +7,24 @@ interface IconProps {
 }
 
 /**
- * Official-style 7-spoke Kubernetes Cluster Helm / Heptagon Wheel emblem.
- * Always paired with emerald green so cluster identity is unmistakable.
+ * 7-spoke Kubernetes Cluster Helm / Heptagon Wheel emblem.
  */
-export const ClusterHelmIcon: React.FC<IconProps> = ({ size = 14, className }) => (
+export const ClusterHelmIcon: React.FC<IconProps> = ({ size = 13, className }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="2.1"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
     aria-hidden="true"
   >
     <polygon points="12 2 19.8 5.8 21.7 14.2 16.3 21 7.7 21 2.3 14.2 4.2 5.8" />
-    <circle cx="12" cy="12" r="3.2" />
-    <line x1="12" y1="5" x2="12" y2="8.8" />
+    <circle cx="12" cy="12" r="3.1" />
+    <line x1="12" y1="5" x2="12" y2="8.9" />
     <line x1="17.4" y1="7.7" x2="14.5" y2="10" />
     <line x1="18.6" y1="13.8" x2="15.1" y2="12.8" />
     <line x1="14.9" y1="18.2" x2="13.3" y2="14.9" />
@@ -36,9 +35,9 @@ export const ClusterHelmIcon: React.FC<IconProps> = ({ size = 14, className }) =
 )
 
 /**
- * Kubernetes Namespace partition cube (dashed scope boundary).
+ * Kubernetes Namespace scope hexagon.
  */
-export const NamespaceCubeIcon: React.FC<IconProps> = ({ size = 13, className }) => (
+export const NamespaceCubeIcon: React.FC<IconProps> = ({ size = 12, className }) => (
   <svg
     width={size}
     height={size}
@@ -63,7 +62,7 @@ export const NamespaceCubeIcon: React.FC<IconProps> = ({ size = 13, className })
 export const ResourceCategoryIcon: React.FC<{
   category: ViewResourceCategory
   size?: number
-}> = ({ category, size = 13 }) => {
+}> = ({ category, size = 14 }) => {
   const common = {
     width: size,
     height: size,
@@ -229,45 +228,9 @@ export const ResourceCategoryIcon: React.FC<{
   }
 }
 
-/**
- * Distinct CLI-styled Kubernetes resource badge (`>_ deploy`, `>_ po`, `>_ topo`, etc.).
- */
-export const ResourceCliBadge: React.FC<{
-  category: ViewResourceCategory
-  kindShort: string
-  compact?: boolean
-}> = ({ category, kindShort, compact = false }) => (
-  <span className={`cli-kind-badge cli-cat-${category} ${compact ? 'is-compact' : ''}`}>
-    <span className="cli-prompt-glyph" aria-hidden="true">
-      &gt;_
-    </span>
-    <ResourceCategoryIcon category={category} size={compact ? 11 : 12} />
-    <span className="cli-kind-code">{kindShort}</span>
-  </span>
-)
-
-export const StarIcon: React.FC<{ filled: boolean; size?: number }> = ({
-  filled,
-  size = 14
-}) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill={filled ? 'currentColor' : 'none'}
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </svg>
-)
-
 export const LockIcon: React.FC<{ locked: boolean; size?: number }> = ({
   locked,
-  size = 14
+  size = 15
 }) =>
   locked ? (
     <svg
@@ -301,14 +264,14 @@ export const LockIcon: React.FC<{ locked: boolean; size?: number }> = ({
     </svg>
   )
 
-export const TrashBinIcon: React.FC<IconProps> = ({ size = 15, className }) => (
+export const TrashBinIcon: React.FC<IconProps> = ({ size = 16, className }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.9"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
@@ -321,20 +284,43 @@ export const TrashBinIcon: React.FC<IconProps> = ({ size = 15, className }) => (
   </svg>
 )
 
-export const DragGripIcon: React.FC<IconProps> = ({ size = 14, className }) => (
+export const PlusIcon: React.FC<IconProps> = ({ size = 14, className }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
-    fill="currentColor"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className={className}
     aria-hidden="true"
   >
-    <circle cx="9" cy="6" r="1.6" />
-    <circle cx="15" cy="6" r="1.6" />
-    <circle cx="9" cy="12" r="1.6" />
-    <circle cx="15" cy="12" r="1.6" />
-    <circle cx="9" cy="18" r="1.6" />
-    <circle cx="15" cy="18" r="1.6" />
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+)
+
+export const ChevronIcon: React.FC<{ direction: 'left' | 'right'; size?: number }> = ({
+  direction,
+  size = 14
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {direction === 'left' ? (
+      <polyline points="15 18 9 12 15 6" />
+    ) : (
+      <polyline points="9 18 15 12 9 6" />
+    )}
   </svg>
 )
