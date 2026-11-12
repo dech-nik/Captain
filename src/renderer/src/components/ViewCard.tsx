@@ -15,8 +15,8 @@ export interface ViewCardProps {
   isActiveNow?: boolean
   /** Marks the card when hovered as a swap target in the palette. */
   isDropTarget?: boolean
-  /** Visual state while lifted under the pointer (`'move'` | `'trash'` | `'visit'`). */
-  dragTone?: 'move' | 'trash' | 'visit'
+  /** Visual state while lifted under the pointer (`'move'` | `'trash'` | `'current'`). */
+  dragTone?: 'move' | 'trash' | 'current'
   style?: React.CSSProperties
   className?: string
   onPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void

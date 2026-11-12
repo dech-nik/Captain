@@ -15,7 +15,7 @@ type DragSource =
 type DropZone =
   | { kind: 'slot'; slotIndex: number }
   | { kind: 'trash' }
-  | { kind: 'outside' }
+  | { kind: 'current' }
   | { kind: 'neutral' }
 
 interface ActivePointerDrag {
@@ -50,11 +50,14 @@ function resolveDropZoneAtPoint(
     if (zoneAttr === 'trash') {
       return source.kind === 'slot' ? { kind: 'trash' } : { kind: 'neutral' }
     }
-    if (zoneAttr === 'palette-shell' || zoneAttr === 'live-dock') {
+    if (zoneAttr === 'live-dock') {
+      return source.kind === 'slot' ? { kind: 'current' } : { kind: 'neutral' }
+    }
+    if (zoneAttr === 'palette-shell') {
       return { kind: 'neutral' }
     }
   }
-  return source.kind === 'slot' ? { kind: 'outside' } : { kind: 'neutral' }
+  return { kind: 'neutral' }
 }
 
 export const WorkspaceOverlay: React.FC<WorkspaceOverlayProps> = ({ workspace }) => {
@@ -202,7 +205,7 @@ export const WorkspaceOverlay: React.FC<WorkspaceOverlayProps> = ({ workspace })
           current.source.paletteId,
           current.source.slotIndex
         )
-      } else if (drop.kind === 'outside' && current.source.kind === 'slot') {
+      } else if (drop.kind === 'current' && current.source.kind === 'slot') {
         void window.launcherApi.activateWorkspaceView(current.source.view, {
           removeFromSlot: {
             paletteId: current.source.paletteId,
@@ -277,26 +280,24 @@ export const WorkspaceOverlay: React.FC<WorkspaceOverlayProps> = ({ workspace })
   const isDragging = Boolean(dragState?.dragging)
   const isDraggingSlot = Boolean(dragState?.dragging && dragState.source.kind === 'slot')
   const isDraggingLive = Boolean(dragState?.dragging && dragState.source.kind === 'live')
-  const outsideActive =
-    isDraggingSlot && dragState?.hoveredZone.kind === 'outside' && !activePalette.locked
   const trashActive =
     isDraggingSlot && dragState?.hoveredZone.kind === 'trash' && !activePalette.locked
+  const currentActive =
+    isDraggingSlot && dragState?.hoveredZone.kind === 'current' && !activePalette.locked
 
-  const floatingTone: 'move' | 'trash' | 'visit' = trashActive
+  const floatingTone: 'move' | 'trash' | 'current' = trashActive
     ? 'trash'
-    : outsideActive
-      ? 'visit'
+    : currentActive
+      ? 'current'
       : 'move'
 
   return (
     <div
-      className={`overlay-backdrop overlay-backdrop-glass palette-stage ${
-        outsideActive ? 'is-outside-active' : ''
-      }`}
+      className="overlay-backdrop overlay-backdrop-glass palette-stage"
       onMouseDown={handleBackdropMouseDown}
     >
       <div className="palette-stack" onMouseDown={(e) => e.stopPropagation()}>
-        {/* 1. Current View Card outside/above the palette (identical ViewCard geometry) */}
+        {/* 1. Current view above the palette. Dropping a saved view here opens it. */}
         {workspace.liveView && (
           <div
             data-drop-zone="live-dock"
